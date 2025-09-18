@@ -18,7 +18,7 @@ export default function CustomerLogoSplit({ isOpen, onClose, onSave }: CustomerL
   const [lottieData, setLottieData] = useState<any>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
-  const [backgroundColor, setBackgroundColor] = useState('transparent');
+  const [backgroundColor, setBackgroundColor] = useState('#184cb4');
   const [customerLogo, setCustomerLogo] = useState<string | null>(null);
   const [logoScale, setLogoScale] = useState(1);
   const [loading, setLoading] = useState(false);
@@ -30,28 +30,18 @@ export default function CustomerLogoSplit({ isOpen, onClose, onSave }: CustomerL
   useEffect(() => {
     const loadCustomerLogoSplit = async () => {
       try {
-        console.log('Fetching CustomerLogoSplit.json...');
         const response = await fetch('/CustomerLogoSplit.json');
-        console.log('Response status:', response.status);
-        console.log('Response headers:', response.headers);
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
         const data = await response.json();
-        console.log('Lottie data loaded successfully:', data);
-        console.log('Lottie data has layers:', data.layers ? data.layers.length : 'no layers');
-        console.log('Lottie data has assets:', data.assets ? data.assets.length : 'no assets');
-        console.log('Lottie data frame rate:', data.fr);
-        console.log('Lottie data duration:', data.op, 'to', data.ip);
         setLottieData(data);
       } catch (error) {
         console.error('Error loading CustomerLogoSplit.json:', error);
-        console.error('Error details:', error.message);
       }
     };
 
     if (isOpen) {
-      console.log('Component opened, loading Lottie data...');
       loadCustomerLogoSplit();
     }
   }, [isOpen]);
@@ -154,10 +144,10 @@ export default function CustomerLogoSplit({ isOpen, onClose, onSave }: CustomerL
                     keyframe.s[1] = 0;
                   } else {
                     // For non-zero keyframes, scale proportionally
-                    // Calculate the scale factor based on the original scale values
-                    // Use the average of both dimensions to maintain proper aspect ratio
-                    const avgOriginalScale = (originalScaleX + originalScaleY) / 2;
-                    const newScale = Math.max(0, avgOriginalScale * scale); // Ensure scale is never negative
+                    // Use the maximum of both dimensions to ensure the logo fits within the circle
+                    // This prevents cropping by ensuring the larger dimension determines the scale
+                    const maxOriginalScale = Math.max(originalScaleX, originalScaleY);
+                    const newScale = Math.max(0, maxOriginalScale * scale); // Ensure scale is never negative
                     
                     // Apply the same scale to both dimensions to maintain aspect ratio
                     keyframe.s[0] = newScale;
@@ -168,8 +158,9 @@ export default function CustomerLogoSplit({ isOpen, onClose, onSave }: CustomerL
             } else {
               // It's a static value - preserve aspect ratio
               const currentScale = layer.ks.s.k || [100, 100, 100];
-              const avgOriginalScale = (currentScale[0] + currentScale[1]) / 2;
-              const newScale = Math.max(0, avgOriginalScale * scale); // Ensure scale is never negative
+              // Use the maximum of both dimensions to ensure the logo fits within the circle
+              const maxOriginalScale = Math.max(currentScale[0], currentScale[1]);
+              const newScale = Math.max(0, maxOriginalScale * scale); // Ensure scale is never negative
               layer.ks.s.k = [newScale, newScale, 100];
             }
           }
@@ -187,16 +178,8 @@ export default function CustomerLogoSplit({ isOpen, onClose, onSave }: CustomerL
           }
         }
         
-        // Also scale the WhiteCircleCustomer layer (the circular constraint) to match the logo scale
-        if (layer.nm === 'WhiteCircleCustomer') {
-          if (layer.ks && layer.ks.s) {
-            // Scale the circular constraint by the same amount as the logo
-            const currentScale = layer.ks.s.k || [100, 100, 100];
-            const avgOriginalScale = (currentScale[0] + currentScale[1]) / 2;
-            const newScale = Math.max(0, avgOriginalScale * scale);
-            layer.ks.s.k = [newScale, newScale, 100];
-          }
-        }
+        // Keep the WhiteCircleCustomer layer (circular constraint) at original size
+        // Only scale the CustomerLogo layer, not the circle container
         
         // Recursively check nested layers
         if (layer.layers) {
@@ -223,12 +206,7 @@ export default function CustomerLogoSplit({ isOpen, onClose, onSave }: CustomerL
   };
 
   const loadLottieAnimation = (preserveFramePosition = false) => {
-    console.log('loadLottieAnimation called with preserveFramePosition:', preserveFramePosition);
-    console.log('lottieData:', lottieData);
-    console.log('containerRef.current:', containerRef.current);
-    
     if (!lottieData || !containerRef.current) {
-      console.log('Missing lottieData or containerRef, returning early');
       return;
     }
 
@@ -239,7 +217,6 @@ export default function CustomerLogoSplit({ isOpen, onClose, onSave }: CustomerL
 
     // Destroy existing animation
     if (lottieInstanceRef.current) {
-      console.log('Destroying existing animation');
       lottieInstanceRef.current.destroy();
     }
 
@@ -311,10 +288,6 @@ export default function CustomerLogoSplit({ isOpen, onClose, onSave }: CustomerL
       }
 
     // Create new Lottie animation
-    console.log('Creating Lottie animation with data:', updatedLottieData);
-    console.log('Container element:', containerRef.current);
-    console.log('Container dimensions:', containerRef.current?.offsetWidth, 'x', containerRef.current?.offsetHeight);
-    
     try {
       lottieInstanceRef.current = lottie.loadAnimation({
         container: containerRef.current,
@@ -330,19 +303,13 @@ export default function CustomerLogoSplit({ isOpen, onClose, onSave }: CustomerL
         }
       });
       
-      console.log('Lottie animation created successfully:', lottieInstanceRef.current);
-      console.log('Animation total frames:', lottieInstanceRef.current?.totalFrames);
-      console.log('Animation duration:', lottieInstanceRef.current?.duration);
-      
       // Set up event listeners
       if (lottieInstanceRef.current) {
         lottieInstanceRef.current.addEventListener('complete', () => {
-          console.log('Animation completed');
           setIsPlaying(false);
         });
         
         lottieInstanceRef.current.addEventListener('loopComplete', () => {
-          console.log('Animation loop completed');
           setIsPlaying(false);
         });
         
@@ -356,13 +323,10 @@ export default function CustomerLogoSplit({ isOpen, onClose, onSave }: CustomerL
         lottieInstanceRef.current.goToAndStop(0, true);
         setTotalFrames(lottieInstanceRef.current.totalFrames);
         setCurrentFrame(0);
-        console.log('Animation initialized, showing first frame');
       }
       
     } catch (error) {
       console.error('Error creating Lottie animation:', error);
-      console.error('Error details:', error.message);
-      console.error('Stack trace:', error.stack);
     }
 
     // Disable watermark if possible
@@ -407,9 +371,6 @@ export default function CustomerLogoSplit({ isOpen, onClose, onSave }: CustomerL
   };
 
   useEffect(() => {
-    console.log('useEffect triggered for lottieData or speed change');
-    console.log('lottieData exists:', !!lottieData);
-    console.log('speed:', speed);
     if (lottieData) {
       loadLottieAnimation();
     }
@@ -432,16 +393,9 @@ export default function CustomerLogoSplit({ isOpen, onClose, onSave }: CustomerL
 
   // Initialize animation when component opens
   useEffect(() => {
-    console.log('Initialization useEffect triggered');
-    console.log('isOpen:', isOpen);
-    console.log('lottieData exists:', !!lottieData);
-    console.log('containerRef.current exists:', !!containerRef.current);
-    
     if (isOpen && lottieData && containerRef.current) {
-      console.log('All conditions met, loading animation with delay');
       // Small delay to ensure DOM is ready
       const timer = setTimeout(() => {
-        console.log('Timer fired, calling loadLottieAnimation');
         loadLottieAnimation();
       }, 100);
       return () => clearTimeout(timer);
@@ -702,7 +656,7 @@ export default function CustomerLogoSplit({ isOpen, onClose, onSave }: CustomerL
                 <div className="flex items-center space-x-4">
                   <input
                     type="color"
-                    value={backgroundColor === 'transparent' ? '#ffffff' : backgroundColor}
+                    value={backgroundColor === 'transparent' ? '#184cb4' : backgroundColor}
                     onChange={(e) => setBackgroundColor(e.target.value)}
                     className="w-12 h-8 border border-gray-300 rounded cursor-pointer"
                   />
@@ -713,28 +667,6 @@ export default function CustomerLogoSplit({ isOpen, onClose, onSave }: CustomerL
                     className="px-3 py-1 border border-gray-300 rounded text-sm flex-1"
                     placeholder="Enter color or 'transparent'"
                   />
-                </div>
-                <div className="flex space-x-2">
-                  <button
-                    onClick={() => setBackgroundColor('transparent')}
-                    className={`px-3 py-1 text-xs rounded ${
-                      backgroundColor === 'transparent' 
-                        ? 'bg-blue-100 text-blue-700 border border-blue-300' 
-                        : 'bg-gray-100 text-gray-700 border border-gray-300'
-                    }`}
-                  >
-                    Transparent
-                  </button>
-                  <button
-                    onClick={() => setBackgroundColor('#ffffff')}
-                    className={`px-3 py-1 text-xs rounded ${
-                      backgroundColor === '#ffffff' 
-                        ? 'bg-blue-100 text-blue-700 border border-blue-300' 
-                        : 'bg-gray-100 text-gray-700 border border-gray-300'
-                    }`}
-                  >
-                    White
-                  </button>
                 </div>
               </div>
               <p className="text-xs text-gray-500 mt-1">
