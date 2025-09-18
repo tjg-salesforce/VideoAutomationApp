@@ -46,10 +46,23 @@ const updateCustomerBgColor = (layers: any[], backgroundColor: string) => {
         layer.ks.o.k = 100;
         if (layer.shapes) {
           layer.shapes.forEach((shape: any) => {
-            if (shape.ty === 'fl' && shape.c) {
+            // Check if it's a group shape (gr) with items
+            if (shape.ty === 'gr' && shape.it) {
+              shape.it.forEach((item: any) => {
+                if (item.ty === 'fl' && item.c) {
+                  const rgb = hexToRgb(backgroundColor);
+                  if (rgb) {
+                    console.log('Updating group shape color from', item.c.k, 'to', [rgb.r / 255, rgb.g / 255, rgb.b / 255, 1]);
+                    item.c.k = [rgb.r / 255, rgb.g / 255, rgb.b / 255, 1];
+                  }
+                }
+              });
+            }
+            // Also check direct fill shapes
+            else if (shape.ty === 'fl' && shape.c) {
               const rgb = hexToRgb(backgroundColor);
               if (rgb) {
-                console.log('Updating shape color from', shape.c.k, 'to', [rgb.r / 255, rgb.g / 255, rgb.b / 255, 1]);
+                console.log('Updating direct shape color from', shape.c.k, 'to', [rgb.r / 255, rgb.g / 255, rgb.b / 255, 1]);
                 shape.c.k = [rgb.r / 255, rgb.g / 255, rgb.b / 255, 1];
               }
             }
@@ -66,36 +79,51 @@ const updateCustomerBgColor = (layers: any[], backgroundColor: string) => {
 };
 
 const updateCustomerLogo = (layers: any[], customerLogo: any, logoScale: number = 1, assets: any[]) => {
-  // Update the asset first
+  // Update the asset first - be more careful about asset structure
   if (customerLogo && customerLogo.data) {
     const logoAsset = assets.find(asset => asset.id === '1'); // Customer logo asset ID
     if (logoAsset) {
+      console.log('Updating logo asset with new data');
+      // Ensure the asset has the right structure
       logoAsset.p = customerLogo.data;
+      // Make sure it's marked as an image asset
+      if (!logoAsset.ty) {
+        logoAsset.ty = 2; // Image asset type
+      }
+    } else {
+      console.log('Logo asset not found! Available assets:', assets.map(a => a.id));
     }
   }
 
   layers.forEach(layer => {
     if (layer.nm === 'CustomerLogo') {
-      // Update scale
+      console.log('Found CustomerLogo layer, updating scale to:', logoScale);
+      // Update scale - be more defensive about the structure
       if (logoScale && layer.ks && layer.ks.s) {
-        if (Array.isArray(layer.ks.s.k)) {
-          // Static scale
-          const originalScaleX = layer.ks.s.k[0];
-          const originalScaleY = layer.ks.s.k[1];
-          const avgOriginalScale = (originalScaleX + originalScaleY) / 2;
-          const newScale = avgOriginalScale * logoScale;
-          layer.ks.s.k = [newScale, newScale];
-        } else if (layer.ks.s.k && layer.ks.s.k.length > 0) {
-          // Animated scale
-          layer.ks.s.k.forEach((keyframe: any) => {
-            if (keyframe.s && keyframe.s.length >= 2) {
-              const originalScaleX = keyframe.s[0];
-              const originalScaleY = keyframe.s[1];
-              const avgOriginalScale = (originalScaleX + originalScaleY) / 2;
-              const newScale = avgOriginalScale * logoScale;
-              keyframe.s = [newScale, newScale];
-            }
-          });
+        try {
+          if (Array.isArray(layer.ks.s.k)) {
+            // Static scale
+            const originalScaleX = layer.ks.s.k[0] || 100;
+            const originalScaleY = layer.ks.s.k[1] || 100;
+            const avgOriginalScale = (originalScaleX + originalScaleY) / 2;
+            const newScale = Math.max(0, avgOriginalScale * logoScale);
+            layer.ks.s.k = [newScale, newScale];
+            console.log('Updated static scale to:', layer.ks.s.k);
+          } else if (layer.ks.s.k && Array.isArray(layer.ks.s.k) && layer.ks.s.k.length > 0) {
+            // Animated scale
+            layer.ks.s.k.forEach((keyframe: any, index: number) => {
+              if (keyframe && keyframe.s && Array.isArray(keyframe.s) && keyframe.s.length >= 2) {
+                const originalScaleX = keyframe.s[0] || 100;
+                const originalScaleY = keyframe.s[1] || 100;
+                const avgOriginalScale = (originalScaleX + originalScaleY) / 2;
+                const newScale = Math.max(0, avgOriginalScale * logoScale);
+                keyframe.s = [newScale, newScale];
+                console.log(`Updated animated scale keyframe ${index} to:`, keyframe.s);
+              }
+            });
+          }
+        } catch (error) {
+          console.error('Error updating logo scale:', error);
         }
       }
     }
