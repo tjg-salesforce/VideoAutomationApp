@@ -299,8 +299,7 @@ export default function ProjectEditor() {
       animationData: updatedData,
       rendererSettings: {
         preserveAspectRatio: 'xMidYMid meet',
-        clearCanvas: true,
-        hideOnTransparent: false
+        clearCanvas: true
       }
     });
 
@@ -323,7 +322,7 @@ export default function ProjectEditor() {
         if (canvas) {
           const testCtx = canvas.getContext('2d');
           const imageData = testCtx.getImageData(0, 0, Math.min(10, canvas.width), Math.min(10, canvas.height));
-          const hasContent = imageData.data.some(pixel => pixel !== 0);
+          const hasContent = imageData.data.some((pixel: number) => pixel !== 0);
           console.log('Canvas content check after forced render:', hasContent);
         } else {
           console.warn('Canvas not available after DOMLoaded event');
@@ -680,13 +679,6 @@ export default function ProjectEditor() {
     const backgroundColor = properties.backgroundColor || '#fca5a5';
     const salesforceColor = 'rgb(0, 162, 225)'; // Salesforce blue
     
-    // Debug canvas dimensions
-    if (frame === 0) {
-      console.log('Video canvas dimensions:', ctx.canvas.width, 'x', ctx.canvas.height);
-      console.log('Customer logo should be at:', ctx.canvas.width * 0.25, 'px from left');
-      console.log('Salesforce logo should be at:', ctx.canvas.width * 0.75, 'px from left');
-    }
-    
     // Calculate animation phases - matching CSS component timing exactly
     const customerBgPhase = Math.min(1, progress * 3.57); // Customer background completes in first 0.7s (14% of timeline) - much slower growth
     const customerLogoPhase = Math.min(1, progress * 7.14); // Customer logo - faster growth, original speed
@@ -749,8 +741,8 @@ export default function ProjectEditor() {
       // Customer logo image
       if (properties.customerLogo && properties.customerLogo.data) {
         // Use preloaded image if available
-        const img = loadedImages[component.id] || new Image();
-        if (img.complete && img.naturalWidth > 0) {
+        const img = loadedImages[component.id];
+        if (img && img.complete && img.naturalWidth > 0) {
           // Draw the customer logo image scaled to fit the circle
           const logoScale = properties.logoScale || 1;
           const scaledRadius = logoRadius * 0.6 * logoScale; // 60% of circle radius, scaled by user setting
@@ -812,9 +804,9 @@ export default function ProjectEditor() {
       ctx.fillText('Logo', logoX, logoY + 20);
     }
     
-    // Handle customer logo exit phase (starts at 0.5s)
+    // Handle customer logo exit phase (starts at 0.53s)
     if (customerOutPhase > 0) {
-      const customerSlideOffset = customerOutPhase * ctx.canvas.width * 5; // Customer logo 2x faster
+      const customerSlideOffset = customerOutPhase * ctx.canvas.width * 2; // Customer logo speed
       
       // Redraw customer logo only
       ctx.save();
@@ -824,10 +816,49 @@ export default function ProjectEditor() {
       const customerY = ctx.canvas.height * 0.5;
       const logoRadius = ctx.canvas.width * 0.078125;
       
+      // White circle
       ctx.fillStyle = 'white';
       ctx.beginPath();
       ctx.arc(customerX, customerY, logoRadius, 0, 2 * Math.PI);
       ctx.fill();
+      
+      // Add shadow
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.1)';
+      ctx.shadowBlur = 10;
+      ctx.shadowOffsetY = 4;
+      ctx.fill();
+      ctx.shadowColor = 'transparent';
+      ctx.shadowBlur = 0;
+      ctx.shadowOffsetY = 0;
+      
+      // Customer logo image
+      if (properties.customerLogo && properties.customerLogo.data) {
+        const img = loadedImages[component.id];
+        if (img && img.complete && img.naturalWidth > 0) {
+          const logoScale = properties.logoScale || 1;
+          const scaledRadius = logoRadius * 0.6 * logoScale;
+          ctx.save();
+          ctx.beginPath();
+          ctx.arc(customerX, customerY, logoRadius, 0, 2 * Math.PI);
+          ctx.clip();
+          ctx.drawImage(img, customerX - scaledRadius, customerY - scaledRadius, scaledRadius * 2, scaledRadius * 2);
+          ctx.restore();
+        } else {
+          ctx.fillStyle = '#333';
+          ctx.font = 'bold 48px Inter, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText('Customer', customerX, customerY - 20);
+          ctx.fillText('Logo', customerX, customerY + 20);
+        }
+      } else {
+        ctx.fillStyle = '#333';
+        ctx.font = 'bold 48px Inter, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('Customer', customerX, customerY - 20);
+        ctx.fillText('Logo', customerX, customerY + 20);
+      }
       
       ctx.restore();
     }
@@ -1150,7 +1181,7 @@ export default function ProjectEditor() {
                     >
                       <h4 className="font-medium text-gray-900">{component.name}</h4>
                       <p className="text-sm text-gray-500">{component.type}</p>
-                      <p className="text-xs text-gray-400 mt-1">{component.description}</p>
+                      <p className="text-xs text-gray-400 mt-1">{component.type}</p>
                     </div>
                   ))}
                 </div>
