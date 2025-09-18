@@ -1,3 +1,4 @@
+require('dotenv').config();
 const { query, initializePostgres } = require('../config/postgres');
 
 const createTables = async () => {
