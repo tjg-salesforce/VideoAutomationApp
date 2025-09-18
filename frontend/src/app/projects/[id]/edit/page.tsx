@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { PlayIcon, PauseIcon, TrashIcon, ArrowLeftIcon } from '@heroicons/react/24/outline';
 import { Project, Component, TimelineItem } from '@/types';
 import { apiEndpoints } from '@/lib/api';
-import ProjectPreview from '@/components/ProjectPreview';
+import ComponentRenderer from '@/components/ComponentRenderer';
 
 export default function ProjectEditor() {
   const params = useParams();
@@ -250,11 +250,12 @@ export default function ProjectEditor() {
           <div className="flex-1 flex items-center justify-center p-6 bg-gray-100">
             <div className="w-full h-full max-w-6xl" style={{ aspectRatio: '16/9' }}>
               {getCurrentTimelineItem() ? (
-                <ProjectPreview
+                <ComponentRenderer
                   component={getCurrentTimelineItem()!.component}
                   properties={componentProperties[getCurrentTimelineItem()!.component.id] || {}}
                   currentTime={currentTime - getCurrentTimelineItem()!.start_time}
                   isPlaying={isPlaying}
+                  mode="preview"
                 />
               ) : (
                 <div className="w-full h-full bg-gray-200 rounded-lg flex items-center justify-center">
