@@ -8,6 +8,16 @@ export interface Project {
   updated_at: string;
   created_by?: string;
   metadata?: Record<string, any>;
+  timeline?: TimelineItem[];
+}
+
+export interface TimelineItem {
+  id: string;
+  component_id: string;
+  component: Component;
+  start_time: number; // in seconds
+  duration: number; // in seconds
+  order: number;
 }
 
 export interface Template {

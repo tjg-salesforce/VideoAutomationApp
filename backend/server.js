@@ -55,6 +55,7 @@ app.use((req, res) => {
 app.listen(PORT, () => {
   console.log(`🚀 Video Automation Backend running on port ${PORT}`);
   console.log(`📊 Health check: http://localhost:${PORT}/health`);
+  console.log(`🌐 CORS enabled for ports: 3000, 3001, 3005`);
 });
 
 module.exports = app;

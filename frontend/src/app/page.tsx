@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { apiEndpoints } from '@/lib/api';
 import { Project, Template, Component } from '@/types';
-import { PlusIcon, PlayIcon, DocumentTextIcon, CubeIcon, EyeIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, PlayIcon, DocumentTextIcon, CubeIcon, EyeIcon, PencilIcon, TrashIcon } from '@heroicons/react/24/outline';
 import NewProjectModal from '@/components/NewProjectModal';
 import TemplateDetailsModal from '@/components/TemplateDetailsModal';
 import ComponentDetailsModal from '@/components/ComponentDetailsModal';
@@ -77,6 +77,22 @@ export default function Home() {
   const handleComponentClick = (component: Component) => {
     setSelectedComponent(component);
     setShowComponentModal(true);
+  };
+
+  const handleEditProject = (project: Project) => {
+    // Navigate to the project editor page
+    window.location.href = `/projects/${project.id}/edit`;
+  };
+
+  const handleDeleteProject = async (project: Project) => {
+    if (window.confirm(`Are you sure you want to delete "${project.name}"? This action cannot be undone.`)) {
+      try {
+        await apiEndpoints.deleteProject(project.id);
+        loadData(); // Refresh the data
+      } catch (error) {
+        console.error('Error deleting project:', error);
+      }
+    }
   };
 
   if (loading) {
@@ -215,17 +231,42 @@ export default function Home() {
                     <div className="flex-1">
                       <h4 className="text-sm font-medium text-gray-900">{project.name}</h4>
                       <p className="text-sm text-gray-500">{project.description || 'No description'}</p>
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        project.status === 'completed' ? 'bg-green-100 text-green-800' :
-                        project.status === 'in_progress' ? 'bg-yellow-100 text-yellow-800' :
-                        project.status === 'failed' ? 'bg-red-100 text-red-800' :
-                        'bg-gray-100 text-gray-800'
-                      }`}>
-                        {project.status}
-                      </span>
+                      <div className="flex items-center space-x-2 mt-1">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                          project.status === 'completed' ? 'bg-green-100 text-green-800' :
+                          project.status === 'in_progress' ? 'bg-yellow-100 text-yellow-800' :
+                          project.status === 'failed' ? 'bg-red-100 text-red-800' :
+                          'bg-gray-100 text-gray-800'
+                        }`}>
+                          {project.status}
+                        </span>
+                        {project.timeline && project.timeline.length > 0 && (
+                          <span className="text-xs text-gray-500">
+                            {project.timeline.length} component{project.timeline.length !== 1 ? 's' : ''}
+                          </span>
+                        )}
+                      </div>
                     </div>
-                    <div className="text-sm text-gray-500">
-                      {new Date(project.created_at).toLocaleDateString()}
+                    <div className="flex items-center space-x-2">
+                      <div className="text-sm text-gray-500">
+                        {new Date(project.created_at).toLocaleDateString()}
+                      </div>
+                      <div className="flex items-center space-x-1">
+                        <button
+                          onClick={() => handleEditProject(project)}
+                          className="p-1 text-gray-400 hover:text-blue-600"
+                          title="Edit project"
+                        >
+                          <PencilIcon className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteProject(project)}
+                          className="p-1 text-gray-400 hover:text-red-600"
+                          title="Delete project"
+                        >
+                          <TrashIcon className="h-4 w-4" />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -315,6 +356,7 @@ export default function Home() {
         isOpen={showComponentModal}
         onClose={() => setShowComponentModal(false)}
       />
+
     </div>
   );
 }
