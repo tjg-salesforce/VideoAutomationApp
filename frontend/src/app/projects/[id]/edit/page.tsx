@@ -609,14 +609,12 @@ export default function ProjectEditor() {
               
               // For CSS animation components, render using CSS-based approach
               if (component.type === 'customer_logo_split') {
-                // Use CSS-based rendering instead of Lottie
+                // Use the existing CSS animation rendering approach
                 const progress = Math.min(1, (currentTime - currentItem.start_time) / currentItem.duration);
                 const totalFrames = 300; // 5 seconds at 60fps
                 const frame = Math.floor(progress * totalFrames);
                 
-                console.log(`Rendering CSS frame ${frame} at time ${currentTime}, progress: ${progress}`);
-                
-                // Render the CSS animation directly to canvas
+                // Render the CSS animation directly to canvas using our existing function
                 renderLogoSplitFrame(ctx, frame, totalFrames, componentProperties[component.id] || {}, loadedImages, component);
               } else {
                 // For other component types, render a placeholder
@@ -678,6 +676,11 @@ export default function ProjectEditor() {
     const progress = frame / totalFrames;
     const backgroundColor = properties.backgroundColor || '#fca5a5';
     const salesforceColor = 'rgb(0, 162, 225)'; // Salesforce blue
+    
+    // Debug logging
+    if (frame % 30 === 0) { // Log every 0.5 seconds
+      console.log(`Frame ${frame}/${totalFrames}, Progress: ${progress.toFixed(3)}`);
+    }
     
     // Calculate animation phases - matching CSS component timing exactly
     const customerBgPhase = Math.min(1, progress * 3.57); // Customer background completes in first 0.7s (14% of timeline) - much slower growth
