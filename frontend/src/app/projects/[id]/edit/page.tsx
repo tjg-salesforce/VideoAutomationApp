@@ -602,77 +602,17 @@ export default function ProjectEditor() {
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
               }
               
-              // For Lottie components, render the actual animation
-              if (component.type === 'customer_logo_split' && lottieInstances[component.id]) {
-                const { lottieInstance } = lottieInstances[component.id];
+              // For CSS animation components, render using CSS-based approach
+              if (component.type === 'customer_logo_split') {
+                // Use CSS-based rendering instead of Lottie
+                const progress = Math.min(1, (currentTime - currentItem.start_time) / currentItem.duration);
+                const totalFrames = 300; // 5 seconds at 60fps
+                const frame = Math.floor(progress * totalFrames);
                 
-                // Check if Lottie instance is fully ready
-                if (!lottieInstance || !lottieInstance.renderer) {
-                  console.warn(`Lottie instance not ready for component ${component.id}`);
-                  // Draw a placeholder to indicate the issue
-                  ctx.fillStyle = '#ff0000';
-                  ctx.font = '48px Arial';
-                  ctx.textAlign = 'center';
-                  ctx.fillText(`Lottie Not Ready: ${component.name}`, canvas.width / 2, canvas.height / 2);
-                } else {
-                  // Calculate the frame number within the Lottie animation
-                  const progress = Math.min(1, (currentTime - currentItem.start_time) / currentItem.duration);
-                  const lottieFrame = Math.floor(progress * (lottieData.op - lottieData.ip)); // op = out point, ip = in point
-                  
-                  // Go to the specific frame
-                  lottieInstance.goToAndStop(lottieFrame, true);
-                  
-                  // Force a render first to ensure canvas is populated
-                  // Note: Lottie doesn't have a direct render() method, goToAndStop should trigger rendering
-                  
-                  // Try multiple ways to get the canvas
-                  let lottieCanvas = lottieInstance.renderer.canvas;
-                  
-                  // If canvas is not available through renderer, try to find it in the container
-                  if (!lottieCanvas) {
-                    const container = lottieInstance.renderer.element;
-                    lottieCanvas = container?.querySelector('canvas');
-                  }
-                  
-                  // If still not found, try to find it in the renderer element
-                  if (!lottieCanvas && lottieInstance.renderer.element) {
-                    lottieCanvas = lottieInstance.renderer.element.querySelector('canvas');
-                  }
-                  
-                  // Debug the renderer state
-                  console.log(`Frame ${lottieFrame} - Renderer state:`, {
-                    hasRenderer: !!lottieInstance.renderer,
-                    rendererType: lottieInstance.renderer?.type,
-                    hasCanvas: !!lottieCanvas,
-                    canvasSize: lottieCanvas ? `${lottieCanvas.width}x${lottieCanvas.height}` : 'N/A',
-                    rendererKeys: lottieInstance.renderer ? Object.keys(lottieInstance.renderer) : 'N/A',
-                    rendererCanvas: lottieInstance.renderer?.canvas,
-                    rendererElement: lottieInstance.renderer?.element
-                  });
-                  
-                  if (lottieCanvas && lottieCanvas.width > 0 && lottieCanvas.height > 0) {
-                    console.log(`Drawing Lottie frame ${lottieFrame} at time ${currentTime}, canvas size: ${lottieCanvas.width}x${lottieCanvas.height}`);
-
-                    try {
-                      ctx.drawImage(lottieCanvas, 0, 0, canvas.width, canvas.height);
-                      console.log(`Successfully drew Lottie canvas for frame ${lottieFrame}`);
-                    } catch (error) {
-                      console.error(`Error drawing Lottie canvas:`, error);
-                      // Draw a placeholder to indicate the issue
-                      ctx.fillStyle = '#ff0000';
-                      ctx.font = '48px Arial';
-                      ctx.textAlign = 'center';
-                      ctx.fillText(`Draw Error: ${component.name}`, canvas.width / 2, canvas.height / 2);
-                    }
-                  } else {
-                    console.warn(`Lottie canvas not ready for component ${component.id}, frame ${lottieFrame}, canvas:`, lottieCanvas);
-                    // Draw a placeholder to indicate the issue
-                    ctx.fillStyle = '#ff0000';
-                    ctx.font = '48px Arial';
-                    ctx.textAlign = 'center';
-                    ctx.fillText(`Lottie Error: ${component.name}`, canvas.width / 2, canvas.height / 2);
-                  }
-                }
+                console.log(`Rendering CSS frame ${frame} at time ${currentTime}, progress: ${progress}`);
+                
+                // Render the CSS animation directly to canvas
+                renderLogoSplitFrame(ctx, frame, totalFrames, componentProperties[component.id] || {});
               } else {
                 // For other component types, render a placeholder
                 ctx.fillStyle = '#ffffff';
@@ -726,6 +666,166 @@ export default function ProjectEditor() {
     }
     
     return currentItem || null;
+  };
+
+  // CSS-based logo split animation rendering
+  const renderLogoSplitFrame = (ctx: CanvasRenderingContext2D, frame: number, totalFrames: number, properties: any) => {
+    const progress = frame / totalFrames;
+    const backgroundColor = properties.backgroundColor || '#fca5a5';
+    const salesforceColor = '#3b82f6';
+    
+    // Calculate animation phases
+    const inPhase = Math.min(1, progress * 3); // First 1/3 of animation
+    const holdPhase = Math.min(1, Math.max(0, (progress - 0.33) * 3)); // Middle 1/3
+    const outPhase = Math.min(1, Math.max(0, (progress - 0.66) * 3)); // Last 1/3
+    
+    // Draw customer background circle
+    if (inPhase > 0) {
+      const customerScale = inPhase;
+      const customerX = ctx.canvas.width * 0.25; // 25% from left
+      const customerY = ctx.canvas.height * 0.5;
+      const customerRadius = Math.min(ctx.canvas.width, ctx.canvas.height) * 0.4 * customerScale;
+      
+      ctx.fillStyle = backgroundColor;
+      ctx.beginPath();
+      ctx.arc(customerX, customerY, customerRadius, 0, 2 * Math.PI);
+      ctx.fill();
+    }
+    
+    // Draw Salesforce background circle
+    if (inPhase > 0) {
+      const salesforceX = ctx.canvas.width * 0.75; // 75% from left
+      const salesforceY = ctx.canvas.height * 0.5;
+      const salesforceRadius = Math.min(ctx.canvas.width, ctx.canvas.height) * 0.4;
+      
+      ctx.fillStyle = salesforceColor;
+      ctx.beginPath();
+      ctx.arc(salesforceX, salesforceY, salesforceRadius, 0, 2 * Math.PI);
+      ctx.fill();
+    }
+    
+    // Draw customer logo circle
+    if (inPhase > 0) {
+      const logoScale = inPhase;
+      const logoX = ctx.canvas.width * 0.25;
+      const logoY = ctx.canvas.height * 0.5;
+      const logoRadius = 200 * logoScale;
+      
+      // White circle
+      ctx.fillStyle = 'white';
+      ctx.beginPath();
+      ctx.arc(logoX, logoY, logoRadius, 0, 2 * Math.PI);
+      ctx.fill();
+      
+      // Add shadow
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.1)';
+      ctx.shadowBlur = 10;
+      ctx.shadowOffsetY = 4;
+      ctx.fill();
+      ctx.shadowColor = 'transparent';
+      ctx.shadowBlur = 0;
+      ctx.shadowOffsetY = 0;
+      
+      // Logo text
+      ctx.fillStyle = '#333';
+      ctx.font = 'bold 48px Inter, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('Customer', logoX, logoY - 20);
+      ctx.fillText('Logo', logoX, logoY + 20);
+    }
+    
+    // Draw Salesforce logo circle
+    if (inPhase > 0) {
+      const logoScale = inPhase;
+      const logoX = ctx.canvas.width * 0.75;
+      const logoY = ctx.canvas.height * 0.5;
+      const logoRadius = 200 * logoScale;
+      
+      // White circle
+      ctx.fillStyle = 'white';
+      ctx.beginPath();
+      ctx.arc(logoX, logoY, logoRadius, 0, 2 * Math.PI);
+      ctx.fill();
+      
+      // Add shadow
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.1)';
+      ctx.shadowBlur = 10;
+      ctx.shadowOffsetY = 4;
+      ctx.fill();
+      ctx.shadowColor = 'transparent';
+      ctx.shadowBlur = 0;
+      ctx.shadowOffsetY = 0;
+      
+      // Logo text
+      ctx.fillStyle = '#333';
+      ctx.font = 'bold 48px Inter, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('Salesforce', logoX, logoY - 20);
+      ctx.fillText('Logo', logoX, logoY + 20);
+    }
+    
+    // Handle out phase (slide out)
+    if (outPhase > 0) {
+      // Apply slide out transform
+      const slideOffset = outPhase * ctx.canvas.width;
+      
+      // Redraw everything with slide offset
+      ctx.save();
+      ctx.translate(-slideOffset, 0);
+      
+      // Redraw customer side
+      const customerX = ctx.canvas.width * 0.25;
+      const customerY = ctx.canvas.height * 0.5;
+      const customerRadius = Math.min(ctx.canvas.width, ctx.canvas.height) * 0.4;
+      
+      ctx.fillStyle = backgroundColor;
+      ctx.beginPath();
+      ctx.arc(customerX, customerY, customerRadius, 0, 2 * Math.PI);
+      ctx.fill();
+      
+      // Redraw Salesforce side
+      const salesforceX = ctx.canvas.width * 0.75;
+      const salesforceY = ctx.canvas.height * 0.5;
+      const salesforceRadius = Math.min(ctx.canvas.width, ctx.canvas.height) * 0.4;
+      
+      ctx.fillStyle = salesforceColor;
+      ctx.beginPath();
+      ctx.arc(salesforceX, salesforceY, salesforceRadius, 0, 2 * Math.PI);
+      ctx.fill();
+      
+      // Redraw logos
+      const logoRadius = 200;
+      
+      // Customer logo
+      ctx.fillStyle = 'white';
+      ctx.beginPath();
+      ctx.arc(customerX, customerY, logoRadius, 0, 2 * Math.PI);
+      ctx.fill();
+      
+      ctx.fillStyle = '#333';
+      ctx.font = 'bold 48px Inter, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('Customer', customerX, customerY - 20);
+      ctx.fillText('Logo', customerX, customerY + 20);
+      
+      // Salesforce logo
+      ctx.fillStyle = 'white';
+      ctx.beginPath();
+      ctx.arc(salesforceX, salesforceY, logoRadius, 0, 2 * Math.PI);
+      ctx.fill();
+      
+      ctx.fillStyle = '#333';
+      ctx.font = 'bold 48px Inter, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('Salesforce', salesforceX, salesforceY - 20);
+      ctx.fillText('Logo', salesforceX, salesforceY + 20);
+      
+      ctx.restore();
+    }
   };
 
   const handlePlayPause = () => {

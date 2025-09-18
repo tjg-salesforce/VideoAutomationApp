@@ -1,0 +1,194 @@
+/* Import Inter font */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap');
+
+/* Variables for easy customization based on 1920x1080px canvas */
+:root {
+  --customer-bg-color: #fca5a5; /* Red-500 */
+  --salesforce-bg-color: #3b82f6; /* Blue-500 */
+  --white-circle-color: white;
+  --circle-diameter: calc(400 / 1920 * 100vw); /* 400px diameter */
+  --animation-duration-in: 1s;
+  --animation-delay-in-bg: 0.2s;
+  --animation-delay-in-logo: 0.4s;
+  --hold-duration: 4s;
+  --animation-duration-out: 1s;
+  --animation-delay-out-customer: calc(var(--hold-duration) + var(--animation-duration-in) + 0.5s);
+  --animation-delay-out-salesforce-bg: calc(var(--hold-duration) + var(--animation-duration-in) + 0.7s);
+  --animation-delay-out-salesforce-logo: calc(var(--hold-duration) + var(--animation-duration-in) + 0.9s);
+  
+  /* Final positions based on your spacing logic */
+  --customer-logo-left: 25%;
+  --salesforce-logo-left: 75%;
+  --logo-scale: 1;
+}
+
+.logo-split-canvas {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  background-color: transparent;
+  overflow: hidden;
+  font-family: 'Inter', sans-serif;
+}
+
+/* The customer background that grows from the center */
+.customer-bg-stinger {
+  position: absolute;
+  top: 50%;
+  left: var(--customer-logo-left);
+  width: 200vw;
+  height: 200vw;
+  background-color: var(--customer-bg-color);
+  border-radius: 50%;
+  transform: translate(-50%, -50%) scale(0);
+  animation: customerStingerIn var(--animation-duration-in) ease-out forwards,
+             customerStingerOut var(--animation-duration-out) ease-in forwards var(--animation-delay-out-customer);
+  z-index: 2;
+}
+
+/* The blue background circle for Salesforce */
+.salesforce-bg {
+  position: absolute;
+  top: 50%;
+  left: 50%; /* Aligns the left edge with the center of the canvas */
+  width: calc(2000 / 1920 * 100vw);
+  height: calc(2000 / 1920 * 100vw);
+  background-color: var(--salesforce-bg-color);
+  border-radius: 50%;
+  transform: translate(100vw, -50%); /* Starts off-screen to the right */
+  animation: salesforceSlideIn var(--animation-duration-in) ease-out forwards,
+             salesforceSlideOut var(--animation-duration-out) ease-in forwards var(--animation-delay-out-salesforce-bg);
+  z-index: 3;
+}
+
+/* The white circles for the logos */
+.logo-circle {
+  position: absolute;
+  top: 50%;
+  width: var(--circle-diameter);
+  height: var(--circle-diameter);
+  background-color: var(--white-circle-color);
+  border-radius: 50%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1), 0 2px 4px rgba(0, 0, 0, 0.06);
+  transform: translateY(-50%);
+  z-index: 10;
+}
+
+/* Logo images inside the circles */
+.logo-image {
+  width: 60%;
+  height: auto;
+  object-fit: contain;
+}
+
+.customer-logo-circle {
+  left: var(--customer-logo-left);
+  transform: translate(-50%, -50%) scale(0);
+  animation: customerLogoGrow var(--animation-duration-in) ease-out forwards var(--animation-delay-in-logo),
+             logoSlideOut var(--animation-duration-out) ease-in forwards var(--animation-delay-out-customer);
+}
+
+.salesforce-logo-circle {
+  left: var(--salesforce-logo-left);
+  transform: translate(100vw, -50%) scale(0);
+  animation: salesforceLogoSlideGrowIn var(--animation-duration-in) ease-out forwards var(--animation-delay-in-logo),
+             logoSlideOut var(--animation-duration-out) ease-in forwards var(--animation-delay-out-salesforce-logo);
+  z-index: 11;
+}
+
+/* The animation keyframes */
+@keyframes customerStingerIn {
+  0% { transform: translate(-50%, -50%) scale(0); }
+  100% { transform: translate(-50%, -50%) scale(1); }
+}
+
+@keyframes salesforceSlideIn {
+  0% { transform: translate(100vw, -50%); }
+  100% { transform: translate(0, -50%); }
+}
+
+@keyframes customerLogoGrow {
+  0% { transform: translate(-50%, -50%) scale(0); }
+  100% { transform: translate(-50%, -50%) scale(1); }
+}
+
+@keyframes salesforceLogoSlideGrowIn {
+  0% {
+    left: 100vw;
+    transform: translate(-50%, -50%) scale(0);
+  }
+  100% {
+    left: var(--salesforce-logo-left);
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+@keyframes customerStingerOut {
+  0% { transform: translate(-50%, -50%) translateX(0); }
+  100% { transform: translate(-50%, -50%) translateX(-200vw); }
+}
+
+@keyframes salesforceSlideOut {
+  0% { transform: translate(0, -50%); }
+  100% { transform: translate(-200vw, -50%); }
+}
+
+@keyframes logoSlideOut {
+  0% { transform: translate(-50%, -50%) translateX(0); }
+  100% { transform: translate(-50%, -50%) translateX(-200vw); }
+}
+
+/* Frame-based animation control for video rendering */
+.logo-split-canvas[data-frame="0"] .customer-bg-stinger {
+  transform: translate(-50%, -50%) scale(0);
+}
+
+.logo-split-canvas[data-frame="30"] .customer-bg-stinger {
+  transform: translate(-50%, -50%) scale(0.5);
+}
+
+.logo-split-canvas[data-frame="60"] .customer-bg-stinger {
+  transform: translate(-50%, -50%) scale(1);
+}
+
+.logo-split-canvas[data-frame="0"] .salesforce-bg {
+  transform: translate(100vw, -50%);
+}
+
+.logo-split-canvas[data-frame="30"] .salesforce-bg {
+  transform: translate(50vw, -50%);
+}
+
+.logo-split-canvas[data-frame="60"] .salesforce-bg {
+  transform: translate(0, -50%);
+}
+
+.logo-split-canvas[data-frame="0"] .customer-logo-circle {
+  transform: translate(-50%, -50%) scale(0);
+}
+
+.logo-split-canvas[data-frame="30"] .customer-logo-circle {
+  transform: translate(-50%, -50%) scale(0.5);
+}
+
+.logo-split-canvas[data-frame="60"] .customer-logo-circle {
+  transform: translate(-50%, -50%) scale(1);
+}
+
+.logo-split-canvas[data-frame="0"] .salesforce-logo-circle {
+  left: 100vw;
+  transform: translate(-50%, -50%) scale(0);
+}
+
+.logo-split-canvas[data-frame="30"] .salesforce-logo-circle {
+  left: 75%;
+  transform: translate(-50%, -50%) scale(0.5);
+}
+
+.logo-split-canvas[data-frame="60"] .salesforce-logo-circle {
+  left: var(--salesforce-logo-left);
+  transform: translate(-50%, -50%) scale(1);
+}

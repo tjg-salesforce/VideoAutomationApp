@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
-import LogoSplitAnimation from '../animations/LogoSplitAnimation';
+import LogoSplitCSS from '../animations/LogoSplitCSS';
 
 interface CSSAnimationRendererProps {
   component: any;
@@ -23,14 +23,15 @@ export default function CSSAnimationRenderer({
   if (component.type === 'customer_logo_split') {
     return (
       <div ref={containerRef} className="w-full h-full">
-        <LogoSplitAnimation
+        <LogoSplitCSS
           currentTime={currentTime}
           duration={5} // 5 seconds
           isPlaying={isPlaying}
-          backgroundColor={properties.backgroundColor || '#184cb4'}
-          customerLogo={properties.customerLogo || 'Your Logo'}
+          backgroundColor={properties.backgroundColor || '#fca5a5'}
+          customerLogo={properties.customerLogo || 'Customer Logo'}
           logoScale={properties.logoScale || 1}
           mode={mode}
+          onPropertyChange={onPropertyChange}
         />
       </div>
     );

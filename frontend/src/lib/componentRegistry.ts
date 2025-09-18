@@ -17,22 +17,23 @@ export interface ComponentRegistry {
   [key: string]: ComponentRenderer;
 }
 
-// Performance-optimized Lottie renderer
+// Performance-optimized renderers
 const LottieRenderer = React.lazy(() => import('@/components/renderers/LottieRenderer'));
 const HTMLRenderer = React.lazy(() => import('@/components/renderers/HTMLRenderer'));
 const CanvasRenderer = React.lazy(() => import('@/components/renderers/CanvasRenderer'));
 const HybridRenderer = React.lazy(() => import('@/components/renderers/HybridRenderer'));
+const CSSAnimationRenderer = React.lazy(() => import('@/components/renderers/CSSAnimationRenderer'));
 
 export const componentRegistry: ComponentRegistry = {
-  // Motion Graphics (Lottie-based)
+  // Motion Graphics (CSS-based - more reliable than Lottie)
   'customer_logo_split': {
-    type: 'lottie',
-    renderer: LottieRenderer,
-    preview: 'canvas',
+    type: 'css',
+    renderer: CSSAnimationRenderer,
+    preview: 'css',
     performance: 'high',
-    debounceMs: 100,
-    maxInstances: 3,
-    pauseOffscreen: true
+    debounceMs: 50,
+    maxInstances: 5,
+    pauseOffscreen: false
   }
 };
 
