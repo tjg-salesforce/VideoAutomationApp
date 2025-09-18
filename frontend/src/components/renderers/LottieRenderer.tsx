@@ -33,35 +33,10 @@ const useDebounce = (callback: Function, delay: number) => {
   }, [callback, delay]);
 };
 
-// Performance optimization: Memoize expensive operations
-const useMemoizedLottieData = (lottieData: any, properties: any) => {
-  return useMemo(() => {
-    if (!lottieData) return lottieData;
-    
-    const updatedData = JSON.parse(JSON.stringify(lottieData));
-    
-    // Update background color - default to #184cb4 if not specified
-    const bgColor = properties.backgroundColor || '#184cb4';
-    updateCustomerBgColor(updatedData.layers, bgColor);
-    
-    // Update customer logo
-    if (properties.customerLogo && properties.customerLogo.data) {
-      updateCustomerLogo(updatedData.layers, properties.customerLogo, properties.logoScale);
-    }
-    
-    return updatedData;
-  }, [lottieData, properties.backgroundColor, properties.customerLogo, properties.logoScale]);
-};
-
 const updateCustomerBgColor = (layers: any[], backgroundColor: string) => {
   layers.forEach(layer => {
-    // Debug: Log layer names to see the structure
-    console.log('Checking layer:', layer.nm, 'type:', layer.ty);
-    
     // Check if this layer is "CustomerBg"
     if (layer.nm === 'CustomerBg') {
-      console.log('Found CustomerBg layer, updating color to:', backgroundColor);
-      
       if (backgroundColor === 'transparent') {
         layer.ks.o.k = 0;
       } else {
@@ -71,7 +46,6 @@ const updateCustomerBgColor = (layers: any[], backgroundColor: string) => {
             if (shape.ty === 'fl' && shape.c) {
               const rgb = hexToRgb(backgroundColor);
               if (rgb) {
-                console.log('Updating shape color from', shape.c.k, 'to', [rgb.r / 255, rgb.g / 255, rgb.b / 255, 1]);
                 shape.c.k = [rgb.r / 255, rgb.g / 255, rgb.b / 255, 1];
               }
             }
@@ -143,10 +117,9 @@ export default function LottieRenderer({
   const containerRef = useRef<HTMLDivElement>(null);
   const lottieInstanceRef = useRef<any>(null);
   const [lottieData, setLottieData] = useState<any>(null);
-  const [isVisible, setIsVisible] = useState(true);
-  const [isInViewport, setIsInViewport] = useState(true);
+  const [isInitialized, setIsInitialized] = useState(false);
 
-  // Load Lottie data
+  // Load Lottie data once
   useEffect(() => {
     const loadLottieData = async () => {
       try {
@@ -161,95 +134,72 @@ export default function LottieRenderer({
     loadLottieData();
   }, []);
 
-  // Memoize updated Lottie data for performance
-  const updatedLottieData = useMemoizedLottieData(lottieData, properties);
-
-  // Debounced property updates
-  const debouncedPropertyChange = useDebounce((property: string, value: any) => {
-    if (onPropertyChange) {
-      onPropertyChange(property, value);
-    }
-  }, 100);
-
-  // Intersection Observer for performance optimization
+  // Initialize Lottie instance once
   useEffect(() => {
-    if (!containerRef.current) return;
+    if (!lottieData || !containerRef.current || isInitialized) return;
 
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        setIsInViewport(entry.isIntersecting);
-      },
-      { threshold: 0.1 }
-    );
+    lottieInstanceRef.current = lottie.loadAnimation({
+      container: containerRef.current,
+      renderer: 'canvas',
+      loop: false,
+      autoplay: false,
+      animationData: lottieData,
+      rendererSettings: {
+        preserveAspectRatio: 'xMidYMid meet',
+        clearCanvas: true,
+        hideOnTransparent: false
+      }
+    });
 
-    observer.observe(containerRef.current);
-
-    return () => observer.disconnect();
-  }, []);
-
-  // Load and update Lottie animation
-  useEffect(() => {
-    if (!updatedLottieData || !containerRef.current) return;
-
-    // Clean up existing instance
-    if (lottieInstanceRef.current) {
-      lottieInstanceRef.current.destroy();
-    }
-
-    // Only create new instance if visible and in viewport
-    if (isVisible && isInViewport) {
-      lottieInstanceRef.current = lottie.loadAnimation({
-        container: containerRef.current,
-        renderer: 'canvas',
-        loop: false,
-        autoplay: false,
-        animationData: updatedLottieData,
-        rendererSettings: {
-          preserveAspectRatio: 'xMidYMid meet',
-          clearCanvas: true,
-          hideOnTransparent: false
-        }
-      });
-
-      // Set initial frame
-      lottieInstanceRef.current.goToAndStop(0, true);
-    }
+    setIsInitialized(true);
 
     return () => {
       if (lottieInstanceRef.current) {
         lottieInstanceRef.current.destroy();
+        lottieInstanceRef.current = null;
       }
     };
-  }, [updatedLottieData, isVisible, isInViewport]);
+  }, [lottieData, isInitialized]);
+
+  // Update properties without recreating instance
+  useEffect(() => {
+    if (!lottieInstanceRef.current || !lottieData) return;
+
+    // Create a copy of the original data and update it
+    const updatedData = JSON.parse(JSON.stringify(lottieData));
+    
+    // Update background color
+    const bgColor = properties.backgroundColor || '#184cb4';
+    updateCustomerBgColor(updatedData.layers, bgColor);
+    
+    // Update customer logo
+    if (properties.customerLogo && properties.customerLogo.data) {
+      updateCustomerLogo(updatedData.layers, properties.customerLogo, properties.logoScale);
+    }
+
+    // Update the animation data without recreating the instance
+    lottieInstanceRef.current.updateAnimationData(updatedData);
+  }, [lottieData, properties.backgroundColor, properties.customerLogo, properties.logoScale]);
 
   // Handle playback
   useEffect(() => {
-    if (!lottieInstanceRef.current || !isVisible || !isInViewport) return;
+    if (!lottieInstanceRef.current) return;
 
     if (isPlaying) {
       lottieInstanceRef.current.play();
     } else {
       lottieInstanceRef.current.pause();
     }
-  }, [isPlaying, isVisible, isInViewport]);
+  }, [isPlaying]);
 
   // Handle current time changes
   useEffect(() => {
-    if (!lottieInstanceRef.current || !isVisible || !isInViewport) return;
+    if (!lottieInstanceRef.current) return;
 
     const totalFrames = lottieInstanceRef.current.totalFrames;
     const frame = (currentTime / 5) * totalFrames; // Assuming 5 second duration
     lottieInstanceRef.current.goToAndStop(Math.min(frame, totalFrames - 1), true);
-  }, [currentTime, isVisible, isInViewport]);
-
-  // Pause offscreen for performance
-  useEffect(() => {
-    if (!lottieInstanceRef.current) return;
-
-    if (!isInViewport && lottieInstanceRef.current.isPaused) {
-      lottieInstanceRef.current.pause();
-    }
-  }, [isInViewport]);
+  }, [currentTime]);
 
   if (!lottieData) {
     return (
