@@ -25,6 +25,7 @@ export default function ProjectEditor() {
   const [loading, setLoading] = useState(false);
   const [draggedComponent, setDraggedComponent] = useState<Component | null>(null);
   const [draggedMediaAsset, setDraggedMediaAsset] = useState<any>(null);
+  const [draggedLayer, setDraggedLayer] = useState<any>(null);
   const [showComponentLibrary, setShowComponentLibrary] = useState(true);
   const [showMediaLibrary, setShowMediaLibrary] = useState(false);
   const [isRendering, setIsRendering] = useState(false);
@@ -74,6 +75,10 @@ export default function ProjectEditor() {
     }
   }, [project]);
 
+  useEffect(() => {
+    calculateTotalDuration(timeline);
+  }, [timelineLayers]);
+
   const loadProject = async () => {
     try {
       const response = await apiEndpoints.getProject(projectId);
@@ -108,7 +113,11 @@ export default function ProjectEditor() {
   };
 
   const calculateTotalDuration = (timelineItems: TimelineItem[]) => {
-    const maxEndTime = Math.max(...timelineItems.map(item => item.start_time + item.duration), 0);
+    const componentMaxTime = Math.max(...timelineItems.map(item => item.start_time + item.duration), 0);
+    const mediaMaxTime = Math.max(...timelineLayers.flatMap(layer => 
+      layer.items.map(item => item.start_time + item.duration)
+    ), 0);
+    const maxEndTime = Math.max(componentMaxTime, mediaMaxTime);
     setTotalDuration(maxEndTime);
   };
 
@@ -121,6 +130,14 @@ export default function ProjectEditor() {
   const handleMediaDragStart = (e: React.DragEvent, mediaAsset: any) => {
     setDraggedMediaAsset(mediaAsset);
     setDraggedComponent(null);
+    setDraggedLayer(null);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleLayerDragStart = (e: React.DragEvent, layer: any) => {
+    setDraggedLayer(layer);
+    setDraggedComponent(null);
+    setDraggedMediaAsset(null);
     e.dataTransfer.effectAllowed = 'move';
   };
 
@@ -206,7 +223,7 @@ export default function ProjectEditor() {
           id: `media_${Date.now()}`,
           asset: draggedMediaAsset,
           start_time: startTime,
-          duration: draggedMediaAsset.duration,
+          duration: draggedMediaAsset.duration || 5, // Use asset duration or default to 5s
           layerId: targetLayer.id
         };
         
@@ -221,7 +238,7 @@ export default function ProjectEditor() {
           id: `media_${Date.now()}`,
           asset: draggedMediaAsset,
           start_time: startTime,
-          duration: draggedMediaAsset.duration,
+          duration: draggedMediaAsset.duration || 5, // Use asset duration or default to 5s
           layerId: `layer_${Date.now()}`
         };
         
@@ -235,6 +252,24 @@ export default function ProjectEditor() {
       }
       
       setDraggedMediaAsset(null);
+    } else if (draggedLayer) {
+      // Handle layer reordering
+      const layerHeight = 80; // Height of each layer section
+      const newIndex = Math.floor(y / layerHeight);
+      
+      if (newIndex >= 0 && newIndex <= timelineLayers.length) {
+        const currentIndex = timelineLayers.findIndex(layer => layer.id === draggedLayer.id);
+        
+        if (currentIndex !== -1 && newIndex !== currentIndex) {
+          const newLayers = [...timelineLayers];
+          const [movedLayer] = newLayers.splice(currentIndex, 1);
+          newLayers.splice(newIndex, 0, movedLayer);
+          
+          setTimelineLayers(newLayers);
+        }
+      }
+      
+      setDraggedLayer(null);
     }
   };
 
@@ -1113,19 +1148,54 @@ export default function ProjectEditor() {
         <div className="flex-1 flex flex-col">
           {/* Preview */}
           <div className="flex-1 flex items-center justify-center p-6 bg-gray-100">
-            <div className="w-full h-full max-w-6xl" style={{ aspectRatio: '16/9' }}>
+            <div className="w-full h-full max-w-6xl relative" style={{ aspectRatio: '16/9' }}>
+              {/* Render media layers first (background) */}
+              {timelineLayers.map((layer) => 
+                layer.items.map((mediaItem) => {
+                  const isActive = currentTime >= mediaItem.start_time && currentTime < mediaItem.start_time + mediaItem.duration;
+                  if (!isActive) return null;
+                  
+                  return (
+                    <div
+                      key={mediaItem.id}
+                      className="absolute inset-0 w-full h-full"
+                      style={{ zIndex: 1 }}
+                    >
+                      {mediaItem.asset.type === 'video' ? (
+                        <video
+                          src={mediaItem.asset.data}
+                          className="w-full h-full object-cover rounded-lg"
+                          autoPlay
+                          muted
+                          loop
+                        />
+                      ) : (
+                        <img
+                          src={mediaItem.asset.data}
+                          alt={mediaItem.asset.name}
+                          className="w-full h-full object-cover rounded-lg"
+                        />
+                      )}
+                    </div>
+                  );
+                })
+              )}
+              
+              {/* Render components on top */}
               {getCurrentTimelineItem() ? (
-                <ComponentRenderer
-                  component={getCurrentTimelineItem()!.component}
-                  properties={componentProperties[getCurrentTimelineItem()!.component.id] || {}}
-                  currentTime={Math.min(
-                    currentTime - getCurrentTimelineItem()!.start_time,
-                    getCurrentTimelineItem()!.duration
-                  )}
-                  isPlaying={isPlaying && currentTime < getCurrentTimelineItem()!.start_time + getCurrentTimelineItem()!.duration}
-                  mode="preview"
-                />
-              ) : (
+                <div className="absolute inset-0 w-full h-full" style={{ zIndex: 2 }}>
+                  <ComponentRenderer
+                    component={getCurrentTimelineItem()!.component}
+                    properties={componentProperties[getCurrentTimelineItem()!.component.id] || {}}
+                    currentTime={Math.min(
+                      currentTime - getCurrentTimelineItem()!.start_time,
+                      getCurrentTimelineItem()!.duration
+                    )}
+                    isPlaying={isPlaying && currentTime < getCurrentTimelineItem()!.start_time + getCurrentTimelineItem()!.duration}
+                    mode="preview"
+                  />
+                </div>
+              ) : timelineLayers.length === 0 ? (
                 <div className="w-full h-full bg-gray-200 rounded-lg flex items-center justify-center">
                   <div className="text-center text-gray-500">
                     <PlayIcon className="h-16 w-16 mx-auto mb-4 text-gray-300" />
@@ -1133,7 +1203,7 @@ export default function ProjectEditor() {
                     <p className="text-sm">Drag components from the sidebar to get started</p>
                   </div>
                 </div>
-              )}
+              ) : null}
             </div>
           </div>
 
@@ -1236,7 +1306,14 @@ export default function ProjectEditor() {
               {/* Media Layers */}
               {timelineLayers.map((layer, layerIndex) => (
                 <div key={layer.id} className="mb-4">
-                  <div className="flex items-center mb-2">
+                  <div 
+                    className="flex items-center mb-2 cursor-move hover:bg-gray-50 p-2 rounded"
+                    draggable
+                    onDragStart={(e) => handleLayerDragStart(e, layer)}
+                  >
+                    <svg className="w-4 h-4 text-gray-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
+                    </svg>
                     <h4 className="text-sm font-medium text-gray-700">{layer.name}</h4>
                     <div className="ml-2 w-3 h-3 bg-green-500 rounded"></div>
                     <button
