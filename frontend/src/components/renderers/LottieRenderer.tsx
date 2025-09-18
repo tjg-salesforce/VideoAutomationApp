@@ -161,9 +161,9 @@ export default function LottieRenderer({
     };
   }, [lottieData, isInitialized]);
 
-  // Update properties without recreating instance
+  // Update properties by recreating instance efficiently
   useEffect(() => {
-    if (!lottieInstanceRef.current || !lottieData) return;
+    if (!lottieInstanceRef.current || !lottieData || !isInitialized) return;
 
     // Create a copy of the original data and update it
     const updatedData = JSON.parse(JSON.stringify(lottieData));
@@ -177,9 +177,34 @@ export default function LottieRenderer({
       updateCustomerLogo(updatedData.layers, properties.customerLogo, properties.logoScale);
     }
 
-    // Update the animation data without recreating the instance
-    lottieInstanceRef.current.updateAnimationData(updatedData);
-  }, [lottieData, properties.backgroundColor, properties.customerLogo, properties.logoScale]);
+    // Store current frame and playing state
+    const currentFrame = lottieInstanceRef.current.currentFrame;
+    const wasPlaying = !lottieInstanceRef.current.isPaused;
+
+    // Destroy and recreate instance with updated data
+    lottieInstanceRef.current.destroy();
+    
+    lottieInstanceRef.current = lottie.loadAnimation({
+      container: containerRef.current,
+      renderer: 'canvas',
+      loop: false,
+      autoplay: false,
+      animationData: updatedData,
+      rendererSettings: {
+        preserveAspectRatio: 'xMidYMid meet',
+        clearCanvas: true,
+        hideOnTransparent: false
+      }
+    });
+
+    // Restore frame position
+    lottieInstanceRef.current.goToAndStop(currentFrame, true);
+    
+    // Restore playing state
+    if (wasPlaying) {
+      lottieInstanceRef.current.play();
+    }
+  }, [lottieData, properties.backgroundColor, properties.customerLogo, properties.logoScale, isInitialized]);
 
   // Handle playback
   useEffect(() => {
