@@ -24,6 +24,8 @@ export default function ProjectEditor() {
   const [draggedComponent, setDraggedComponent] = useState<Component | null>(null);
   const [showComponentLibrary, setShowComponentLibrary] = useState(true);
   const [isRendering, setIsRendering] = useState(false);
+  const [videoFormat, setVideoFormat] = useState<'mp4' | 'webm' | 'mov'>('mp4');
+  const [hasAlphaChannel, setHasAlphaChannel] = useState(false);
   
   // Component properties state
   const [componentProperties, setComponentProperties] = useState<{[key: string]: any}>({});
@@ -209,16 +211,47 @@ export default function ProjectEditor() {
       // Set up MediaRecorder for video capture
       const stream = canvas.captureStream(30); // 30fps
       
-      // Try different MIME types for better compatibility
+      // Determine MIME type based on user selection and browser support
       let mimeType = 'video/webm;codecs=vp8';
-      if (MediaRecorder.isTypeSupported('video/mp4;codecs=h264')) {
-        mimeType = 'video/mp4;codecs=h264';
-        console.log('Using MP4 format');
-      } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) {
-        mimeType = 'video/webm;codecs=vp9';
-        console.log('Using WebM VP9 format');
-      } else {
-        console.log('Using WebM VP8 format (fallback)');
+      let fileExtension = 'webm';
+      
+      if (videoFormat === 'mp4') {
+        if (MediaRecorder.isTypeSupported('video/mp4;codecs=h264')) {
+          mimeType = 'video/mp4;codecs=h264';
+          fileExtension = 'mp4';
+          console.log('Using MP4 H.264 format');
+        } else if (MediaRecorder.isTypeSupported('video/mp4')) {
+          mimeType = 'video/mp4';
+          fileExtension = 'mp4';
+          console.log('Using MP4 format (no codec specified)');
+        } else {
+          console.log('MP4 not supported, falling back to WebM');
+          mimeType = 'video/webm;codecs=vp8';
+          fileExtension = 'webm';
+        }
+      } else if (videoFormat === 'mov') {
+        // MOV is not directly supported by MediaRecorder, so we'll use MP4 and rename
+        if (MediaRecorder.isTypeSupported('video/mp4;codecs=h264')) {
+          mimeType = 'video/mp4;codecs=h264';
+          fileExtension = 'mov';
+          console.log('Using MP4 H.264 format for MOV export');
+        } else {
+          console.log('MP4 not supported for MOV, falling back to WebM');
+          mimeType = 'video/webm;codecs=vp8';
+          fileExtension = 'webm';
+        }
+      } else { // webm
+        if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) {
+          mimeType = 'video/webm;codecs=vp9';
+          fileExtension = 'webm';
+          console.log('Using WebM VP9 format');
+        } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp8')) {
+          mimeType = 'video/webm;codecs=vp8';
+          fileExtension = 'webm';
+          console.log('Using WebM VP8 format');
+        } else {
+          console.log('WebM not supported, using fallback');
+        }
       }
       
       const mediaRecorder = new MediaRecorder(stream, {
@@ -233,7 +266,6 @@ export default function ProjectEditor() {
       };
 
       mediaRecorder.onstop = () => {
-        const fileExtension = mimeType.includes('mp4') ? 'mp4' : 'webm';
         const blob = new Blob(chunks, { type: mimeType });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -244,7 +276,7 @@ export default function ProjectEditor() {
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
         setIsRendering(false);
-        console.log(`Video rendering complete! Format: ${mimeType}`);
+        console.log(`Video rendering complete! Format: ${mimeType}, Extension: ${fileExtension}`);
       };
 
       // Start recording
@@ -288,17 +320,25 @@ export default function ProjectEditor() {
           );
 
           // Clear canvas
-          ctx.fillStyle = '#ffffff';
-          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          if (hasAlphaChannel) {
+            // Transparent background for alpha channel
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+          } else {
+            // White background for standard video
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+          }
 
           if (currentItem) {
             // Render the current component
             const component = currentItem.component;
             const properties = componentProperties[component.id] || {};
             
-            // Set background color
-            ctx.fillStyle = properties.backgroundColor || '#184cb4';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            // Set background color (only if not using alpha channel)
+            if (!hasAlphaChannel) {
+              ctx.fillStyle = properties.backgroundColor || '#184cb4';
+              ctx.fillRect(0, 0, canvas.width, canvas.height);
+            }
             
             // For Lottie components, we need to render the actual animation
             if (component.type === 'customer_logo_split') {
@@ -459,14 +499,55 @@ export default function ProjectEditor() {
           </div>
         </div>
         <div className="flex items-center space-x-2">
-          <button
-            onClick={downloadVideo}
-            disabled={isRendering || timeline.length === 0}
-            className="flex items-center px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <ArrowDownTrayIcon className="h-4 w-4 mr-2" />
-            {isRendering ? 'Rendering...' : 'Download Video'}
-          </button>
+                  <div className="space-y-3">
+                    {/* Video Format Selection */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Video Format
+                      </label>
+                      <select
+                        value={videoFormat}
+                        onChange={(e) => setVideoFormat(e.target.value as 'mp4' | 'webm' | 'mov')}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                        disabled={isRendering}
+                      >
+                        <option value="mp4">MP4 (H.264) - Most Compatible</option>
+                        <option value="webm">WebM (VP9) - Web Optimized</option>
+                        <option value="mov">MOV (H.264) - Professional</option>
+                      </select>
+                    </div>
+
+                    {/* Alpha Channel Option */}
+                    <div>
+                      <label className="flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={hasAlphaChannel}
+                          onChange={(e) => setHasAlphaChannel(e.target.checked)}
+                          disabled={isRendering}
+                          className="mr-2"
+                        />
+                        <span className="text-sm font-medium text-gray-700">
+                          Transparent Background (Alpha Channel)
+                        </span>
+                      </label>
+                      <p className="text-xs text-gray-500 mt-1">
+                        {hasAlphaChannel 
+                          ? 'Video will have transparent background - ideal for overlays'
+                          : 'Video will have solid background color'
+                        }
+                      </p>
+                    </div>
+
+                    <button
+                      onClick={downloadVideo}
+                      disabled={isRendering || timeline.length === 0}
+                      className="w-full flex items-center justify-center px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <ArrowDownTrayIcon className="h-4 w-4 mr-2" />
+                      {isRendering ? 'Rendering...' : `Download ${videoFormat.toUpperCase()}`}
+                    </button>
+                  </div>
           <button
             onClick={saveProject}
             disabled={loading}
