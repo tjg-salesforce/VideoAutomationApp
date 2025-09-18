@@ -117,7 +117,6 @@ export default function LottieRenderer({
   const containerRef = useRef<HTMLDivElement>(null);
   const lottieInstanceRef = useRef<any>(null);
   const [lottieData, setLottieData] = useState<any>(null);
-  const [isInitialized, setIsInitialized] = useState(false);
 
   // Load Lottie data once
   useEffect(() => {
@@ -134,50 +133,16 @@ export default function LottieRenderer({
     loadLottieData();
   }, []);
 
-  // Initialize Lottie instance once
+  // Initialize and update Lottie instance
   useEffect(() => {
-    if (!lottieData || !containerRef.current || isInitialized) return;
+    if (!lottieData || !containerRef.current) return;
 
-    console.log('Initializing Lottie instance...');
-    
-    lottieInstanceRef.current = lottie.loadAnimation({
-      container: containerRef.current,
-      renderer: 'canvas',
-      loop: false,
-      autoplay: false,
-      animationData: lottieData,
-      rendererSettings: {
-        preserveAspectRatio: 'xMidYMid meet',
-        clearCanvas: true,
-        hideOnTransparent: false
-      }
-    });
-
-    console.log('Lottie instance created:', lottieInstanceRef.current);
-    setIsInitialized(true);
-
-    return () => {
-      if (lottieInstanceRef.current) {
-        console.log('Destroying Lottie instance...');
-        lottieInstanceRef.current.destroy();
-        lottieInstanceRef.current = null;
-      }
-    };
-  }, [lottieData, isInitialized]);
-
-  // Update properties by recreating instance efficiently
-  useEffect(() => {
-    if (!lottieInstanceRef.current || !lottieData || !isInitialized) return;
-
-    // Skip if this is the initial load (no properties changed yet)
-    if (!properties.backgroundColor && !properties.customerLogo && !properties.logoScale) {
-      console.log('Skipping property update - no properties set yet');
-      return;
+    // Clean up existing instance
+    if (lottieInstanceRef.current) {
+      lottieInstanceRef.current.destroy();
     }
 
-    console.log('Updating Lottie properties...', properties);
-
-    // Create a copy of the original data and update it
+    // Create updated data
     const updatedData = JSON.parse(JSON.stringify(lottieData));
     
     // Update background color
@@ -189,15 +154,7 @@ export default function LottieRenderer({
       updateCustomerLogo(updatedData.layers, properties.customerLogo, properties.logoScale);
     }
 
-    // Store current frame and playing state
-    const currentFrame = lottieInstanceRef.current.currentFrame || 0;
-    const wasPlaying = !lottieInstanceRef.current.isPaused;
-
-    console.log('Recreating Lottie instance, currentFrame:', currentFrame, 'wasPlaying:', wasPlaying);
-
-    // Destroy and recreate instance with updated data
-    lottieInstanceRef.current.destroy();
-    
+    // Create new instance
     lottieInstanceRef.current = lottie.loadAnimation({
       container: containerRef.current,
       renderer: 'canvas',
@@ -211,16 +168,16 @@ export default function LottieRenderer({
       }
     });
 
-    // Restore frame position
-    lottieInstanceRef.current.goToAndStop(currentFrame, true);
-    
-    // Restore playing state
-    if (wasPlaying) {
-      lottieInstanceRef.current.play();
-    }
+    // Set initial frame
+    lottieInstanceRef.current.goToAndStop(0, true);
 
-    console.log('Lottie instance recreated successfully');
-  }, [lottieData, properties.backgroundColor, properties.customerLogo, properties.logoScale, isInitialized]);
+    return () => {
+      if (lottieInstanceRef.current) {
+        lottieInstanceRef.current.destroy();
+        lottieInstanceRef.current = null;
+      }
+    };
+  }, [lottieData, properties.backgroundColor, properties.customerLogo, properties.logoScale]);
 
   // Handle playback
   useEffect(() => {
@@ -233,7 +190,7 @@ export default function LottieRenderer({
     }
   }, [isPlaying]);
 
-  // Handle current time changes
+  // Handle current time changes with smooth scrubbing
   useEffect(() => {
     if (!lottieInstanceRef.current) return;
 

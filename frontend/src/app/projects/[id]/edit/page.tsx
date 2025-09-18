@@ -182,7 +182,7 @@ export default function ProjectEditor() {
       setIsPlaying(true);
       const interval = setInterval(() => {
         setCurrentTime(prev => {
-          const newTime = prev + 0.1; // Update every 100ms
+          const newTime = prev + 0.033; // Update every 33ms (~30fps)
           if (newTime >= totalDuration) {
             setIsPlaying(false);
             clearInterval(interval);
@@ -191,7 +191,7 @@ export default function ProjectEditor() {
           }
           return newTime;
         });
-      }, 100);
+      }, 33);
       setPlaybackInterval(interval);
     }
   };
