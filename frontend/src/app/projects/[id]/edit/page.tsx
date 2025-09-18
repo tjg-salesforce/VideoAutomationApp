@@ -659,6 +659,7 @@ export default function ProjectEditor() {
                           Custom Logo Upload
                         </label>
                         <input
+                          key={`file-input-${selectedTimelineItem.component.id}`}
                           type="file"
                           accept="image/*"
                           onChange={(e) => {
@@ -680,6 +681,8 @@ export default function ProjectEditor() {
                               };
                               reader.readAsDataURL(file);
                             }
+                            // Reset the input value to allow re-uploading the same file
+                            e.target.value = '';
                           }}
                           className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
                         />
