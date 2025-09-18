@@ -46,7 +46,22 @@ export default function ProjectEditor() {
   const loadProject = async () => {
     try {
       const response = await apiEndpoints.getProject(projectId);
-      setProject(response.data.data);
+      const projectData = response.data.data;
+      setProject(projectData);
+      
+      // Restore component properties if they exist
+      if (projectData.componentProperties) {
+        setComponentProperties(projectData.componentProperties);
+      } else if (projectData.timeline) {
+        // Extract properties from timeline items if they exist
+        const properties: { [key: string]: any } = {};
+        projectData.timeline.forEach((item: any) => {
+          if (item.properties) {
+            properties[item.component.id] = item.properties;
+          }
+        });
+        setComponentProperties(properties);
+      }
     } catch (error) {
       console.error('Error loading project:', error);
     }
@@ -129,11 +144,17 @@ export default function ProjectEditor() {
 
     setLoading(true);
     try {
-      // Only send the fields the backend expects
+      // Include component properties in the timeline items
+      const timelineWithProperties = timeline.map(item => ({
+        ...item,
+        properties: componentProperties[item.component.id] || {}
+      }));
+
       const projectData = {
         name: project.name,
         description: project.description,
-        timeline: timeline,
+        timeline: timelineWithProperties,
+        componentProperties: componentProperties, // Also save as separate field
         status: 'in_progress'
       };
       
@@ -178,8 +199,17 @@ export default function ProjectEditor() {
 
       // Set up MediaRecorder for video capture
       const stream = canvas.captureStream(30); // 30fps
+      
+      // Try different MIME types for better compatibility
+      let mimeType = 'video/webm;codecs=vp9';
+      if (MediaRecorder.isTypeSupported('video/mp4;codecs=h264')) {
+        mimeType = 'video/mp4;codecs=h264';
+      } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp8')) {
+        mimeType = 'video/webm;codecs=vp8';
+      }
+      
       const mediaRecorder = new MediaRecorder(stream, {
-        mimeType: 'video/webm;codecs=vp9'
+        mimeType: mimeType
       });
 
       const chunks: Blob[] = [];
@@ -190,17 +220,18 @@ export default function ProjectEditor() {
       };
 
       mediaRecorder.onstop = () => {
-        const blob = new Blob(chunks, { type: 'video/webm' });
+        const fileExtension = mimeType.includes('mp4') ? 'mp4' : 'webm';
+        const blob = new Blob(chunks, { type: mimeType });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `${project?.name || 'video'}.webm`;
+        a.download = `${project?.name || 'video'}.${fileExtension}`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
         setIsRendering(false);
-        console.log('Video rendering complete!');
+        console.log(`Video rendering complete! Format: ${mimeType}`);
       };
 
       // Start recording
@@ -233,16 +264,55 @@ export default function ProjectEditor() {
           const component = currentItem.component;
           const properties = componentProperties[component.id] || {};
           
-          // For now, render a placeholder for the component
-          // In a real implementation, you'd render the actual Lottie animation
+          // Set background color
           ctx.fillStyle = properties.backgroundColor || '#184cb4';
           ctx.fillRect(0, 0, canvas.width, canvas.height);
           
-          ctx.fillStyle = '#ffffff';
-          ctx.font = '48px Arial';
-          ctx.textAlign = 'center';
-          ctx.fillText(component.name, canvas.width / 2, canvas.height / 2);
-          ctx.fillText(`Frame ${currentFrame + 1}/${totalFrames}`, canvas.width / 2, canvas.height / 2 + 60);
+          // For Lottie components, we need to render the actual animation
+          if (component.type === 'customer_logo_split') {
+            // Create a temporary canvas for Lottie rendering
+            const lottieCanvas = document.createElement('canvas');
+            lottieCanvas.width = canvas.width;
+            lottieCanvas.height = canvas.height;
+            const lottieCtx = lottieCanvas.getContext('2d');
+            
+            if (lottieCtx) {
+              // Set background
+              lottieCtx.fillStyle = properties.backgroundColor || '#184cb4';
+              lottieCtx.fillRect(0, 0, lottieCanvas.width, lottieCanvas.height);
+              
+              // For now, render a simplified version of the logo split
+              // In a full implementation, you'd use lottie-web to render each frame
+              const centerX = lottieCanvas.width / 2;
+              const centerY = lottieCanvas.height / 2;
+              
+              // Draw the circle background
+              lottieCtx.fillStyle = '#ffffff';
+              lottieCtx.beginPath();
+              lottieCtx.arc(centerX, centerY, 200, 0, 2 * Math.PI);
+              lottieCtx.fill();
+              
+              // Draw the logo placeholder
+              lottieCtx.fillStyle = '#184cb4';
+              lottieCtx.font = 'bold 48px Arial';
+              lottieCtx.textAlign = 'center';
+              lottieCtx.fillText('LOGO', centerX, centerY + 15);
+              
+              // Draw the split effect (simplified)
+              const progress = Math.min(1, (currentTime - currentItem.start_time) / currentItem.duration);
+              lottieCtx.fillStyle = properties.backgroundColor || '#184cb4';
+              lottieCtx.fillRect(centerX - 200 + (progress * 400), centerY - 200, 400 - (progress * 400), 400);
+            }
+            
+            // Copy the Lottie canvas to the main canvas
+            ctx.drawImage(lottieCanvas, 0, 0);
+          } else {
+            // For other component types, render a placeholder
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '48px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText(component.name, canvas.width / 2, canvas.height / 2);
+          }
         }
 
         currentFrame++;
