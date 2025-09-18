@@ -128,15 +128,22 @@ export default function ProjectEditor() {
 
     setLoading(true);
     try {
-      await apiEndpoints.updateProject(project.id, {
-        ...project,
-        timeline,
+      // Only send the fields the backend expects
+      const projectData = {
+        name: project.name,
+        description: project.description,
+        timeline: timeline,
         status: 'in_progress'
-      });
+      };
+      
+      console.log('Saving project with data:', projectData);
+      await apiEndpoints.updateProject(project.id, projectData);
+      
       // Refresh project data
       await loadProject();
     } catch (error) {
       console.error('Error saving project:', error);
+      alert('Failed to save project. Please try again.');
     } finally {
       setLoading(false);
     }
