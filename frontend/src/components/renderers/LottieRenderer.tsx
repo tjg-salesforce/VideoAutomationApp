@@ -98,19 +98,12 @@ const updateCustomerLogo = (layers: any[], customerLogo: any, logoScale: number 
   layers.forEach(layer => {
     if (layer.nm === 'CustomerLogo') {
       console.log('Found CustomerLogo layer, updating scale to:', logoScale);
-      // Update scale - be more defensive about the structure
+      // Update scale - handle animated keyframes properly
       if (logoScale && layer.ks && layer.ks.s) {
         try {
-          if (Array.isArray(layer.ks.s.k)) {
-            // Static scale
-            const originalScaleX = layer.ks.s.k[0] || 100;
-            const originalScaleY = layer.ks.s.k[1] || 100;
-            const avgOriginalScale = (originalScaleX + originalScaleY) / 2;
-            const newScale = Math.max(0, avgOriginalScale * logoScale);
-            layer.ks.s.k = [newScale, newScale];
-            console.log('Updated static scale to:', layer.ks.s.k);
-          } else if (layer.ks.s.k && Array.isArray(layer.ks.s.k) && layer.ks.s.k.length > 0) {
-            // Animated scale
+          // Check if it's animated keyframes (array of keyframe objects)
+          if (Array.isArray(layer.ks.s.k) && layer.ks.s.k.length > 0 && typeof layer.ks.s.k[0] === 'object') {
+            // Animated scale - update each keyframe
             layer.ks.s.k.forEach((keyframe: any, index: number) => {
               if (keyframe && keyframe.s && Array.isArray(keyframe.s) && keyframe.s.length >= 2) {
                 const originalScaleX = keyframe.s[0] || 100;
@@ -121,6 +114,14 @@ const updateCustomerLogo = (layers: any[], customerLogo: any, logoScale: number 
                 console.log(`Updated animated scale keyframe ${index} to:`, keyframe.s);
               }
             });
+          } else if (Array.isArray(layer.ks.s.k) && layer.ks.s.k.length >= 2 && typeof layer.ks.s.k[0] === 'number') {
+            // Static scale - direct array
+            const originalScaleX = layer.ks.s.k[0] || 100;
+            const originalScaleY = layer.ks.s.k[1] || 100;
+            const avgOriginalScale = (originalScaleX + originalScaleY) / 2;
+            const newScale = Math.max(0, avgOriginalScale * logoScale);
+            layer.ks.s.k = [newScale, newScale];
+            console.log('Updated static scale to:', layer.ks.s.k);
           }
         } catch (error) {
           console.error('Error updating logo scale:', error);

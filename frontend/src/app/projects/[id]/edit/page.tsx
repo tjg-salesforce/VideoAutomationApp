@@ -314,9 +314,13 @@ export default function ProjectEditor() {
                 type="range"
                 min="0"
                 max={totalDuration}
+                step="0.033"
                 value={currentTime}
                 onChange={(e) => setCurrentTime(parseFloat(e.target.value))}
                 className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                style={{
+                  background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${(currentTime / totalDuration) * 100}%, #e5e7eb ${(currentTime / totalDuration) * 100}%, #e5e7eb 100%)`
+                }}
               />
             </div>
 
