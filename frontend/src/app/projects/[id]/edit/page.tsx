@@ -6,6 +6,7 @@ import { PlayIcon, PauseIcon, TrashIcon, ArrowLeftIcon, ArrowDownTrayIcon } from
 import { Project, Component, TimelineItem } from '@/types';
 import { apiEndpoints } from '@/lib/api';
 import ComponentRenderer from '@/components/ComponentRenderer';
+import lottie from 'lottie-web';
 
 export default function ProjectEditor() {
   const params = useParams();
@@ -26,6 +27,8 @@ export default function ProjectEditor() {
   const [isRendering, setIsRendering] = useState(false);
   const [videoFormat, setVideoFormat] = useState<'mp4' | 'webm' | 'mov'>('mp4');
   const [hasAlphaChannel, setHasAlphaChannel] = useState(false);
+  const [showDownloadModal, setShowDownloadModal] = useState(false);
+  const [lottieData, setLottieData] = useState<any>(null);
   
   // Component properties state
   const [componentProperties, setComponentProperties] = useState<{[key: string]: any}>({});
@@ -36,7 +39,18 @@ export default function ProjectEditor() {
   useEffect(() => {
     loadProject();
     loadComponents();
+    loadLottieData();
   }, [projectId]);
+
+  const loadLottieData = async () => {
+    try {
+      const response = await fetch('/CustomerLogoSplit.json');
+      const data = await response.json();
+      setLottieData(data);
+    } catch (error) {
+      console.error('Error loading Lottie data:', error);
+    }
+  };
 
   useEffect(() => {
     if (project) {
@@ -188,6 +202,114 @@ export default function ProjectEditor() {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
+  // Function to render a Lottie frame to canvas
+  const renderLottieFrame = async (lottieData: any, properties: any, frame: number, canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D) => {
+    return new Promise<void>((resolve) => {
+      // Create a temporary container for Lottie
+      const tempContainer = document.createElement('div');
+      tempContainer.style.position = 'absolute';
+      tempContainer.style.left = '-9999px';
+      tempContainer.style.width = '1920px';
+      tempContainer.style.height = '1080px';
+      document.body.appendChild(tempContainer);
+
+      // Helper function to convert hex to RGB
+      const hexToRgb = (hex: string) => {
+        const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+        return result ? {
+          r: parseInt(result[1], 16),
+          g: parseInt(result[2], 16),
+          b: parseInt(result[3], 16)
+        } : null;
+      };
+
+      // Helper function to update background color
+      const updateCustomerBgColor = (layers: any[], backgroundColor: string) => {
+        layers.forEach(layer => {
+          if (layer.nm === 'CustomerBg') {
+            if (backgroundColor === 'transparent') {
+              layer.ks.o.k = 0;
+            } else {
+              layer.ks.o.k = 100;
+              if (layer.shapes) {
+                layer.shapes.forEach((shape: any) => {
+                  if (shape.ty === 'gr' && shape.it) {
+                    shape.it.forEach((item: any) => {
+                      if (item.ty === 'fl' && item.c) {
+                        const rgb = hexToRgb(backgroundColor);
+                        if (rgb) {
+                          item.c.k = [rgb.r / 255, rgb.g / 255, rgb.b / 255, 1];
+                        }
+                      }
+                    });
+                  } else if (shape.ty === 'fl' && shape.c) {
+                    const rgb = hexToRgb(backgroundColor);
+                    if (rgb) {
+                      shape.c.k = [rgb.r / 255, rgb.g / 255, rgb.b / 255, 1];
+                    }
+                  }
+                });
+              }
+            }
+          }
+          if (layer.layers) {
+            updateCustomerBgColor(layer.layers, backgroundColor);
+          }
+        });
+      };
+
+      // Apply properties to the Lottie data
+      const updatedData = JSON.parse(JSON.stringify(lottieData));
+      
+      // Update background color
+      if (properties.backgroundColor) {
+        updateCustomerBgColor(updatedData.layers, properties.backgroundColor);
+      }
+
+      // Update logo if provided
+      if (properties.customerLogo && properties.customerLogo.data) {
+        const logoAsset = updatedData.assets.find((asset: any) => asset.id === '1');
+        if (logoAsset) {
+          logoAsset.p = properties.customerLogo.data;
+        }
+      }
+
+      // Create Lottie instance
+      const lottieInstance = lottie.loadAnimation({
+        container: tempContainer,
+        renderer: 'canvas',
+        loop: false,
+        autoplay: false,
+        animationData: updatedData,
+        rendererSettings: {
+          preserveAspectRatio: 'xMidYMid meet',
+          clearCanvas: true,
+          hideOnTransparent: false
+        }
+      });
+
+      // Wait for Lottie to be ready, then go to frame
+      lottieInstance.addEventListener('DOMLoaded', () => {
+        lottieInstance.goToAndStop(frame, true);
+        
+        // Wait a bit for the frame to render
+        setTimeout(() => {
+          // Get the canvas from Lottie
+          const lottieCanvas = tempContainer.querySelector('canvas') as HTMLCanvasElement;
+          if (lottieCanvas) {
+            // Draw the Lottie frame to our main canvas
+            ctx.drawImage(lottieCanvas, 0, 0, canvas.width, canvas.height);
+          }
+          
+          // Clean up
+          lottieInstance.destroy();
+          document.body.removeChild(tempContainer);
+          resolve();
+        }, 50);
+      });
+    });
+  };
+
   const downloadVideo = async () => {
     if (timeline.length === 0) {
       alert('No components in timeline to render');
@@ -308,7 +430,7 @@ export default function ProjectEditor() {
         let currentFrame = 0;
         const totalFrames = Math.ceil(totalDuration * fps);
 
-        const renderFrame = () => {
+        const renderFrame = async () => {
           if (currentFrame >= totalFrames) {
             mediaRecorder.stop();
             return;
@@ -340,28 +462,26 @@ export default function ProjectEditor() {
               ctx.fillRect(0, 0, canvas.width, canvas.height);
             }
             
-            // For Lottie components, we need to render the actual animation
-            if (component.type === 'customer_logo_split') {
-              // Calculate animation progress
+            // For Lottie components, render the actual animation
+            if (component.type === 'customer_logo_split' && lottieData) {
+              // Calculate the frame number within the Lottie animation
               const progress = Math.min(1, (currentTime - currentItem.start_time) / currentItem.duration);
-              const centerX = canvas.width / 2;
-              const centerY = canvas.height / 2;
+              const lottieFrame = Math.floor(progress * (lottieData.op - lottieData.ip)); // op = out point, ip = in point
               
-              // Draw the white circle (customer logo background)
-              ctx.fillStyle = '#ffffff';
-              ctx.beginPath();
-              ctx.arc(centerX, centerY, 200, 0, 2 * Math.PI);
-              ctx.fill();
-              
-              // Draw the customer logo
-              if (properties.customerLogo && properties.customerLogo.data && loadedImages[component.id]) {
-                // Draw the pre-loaded custom logo
-                const logoSize = 100 * (properties.logoScale || 1);
-                const logoX = centerX - logoSize / 2;
-                const logoY = centerY - logoSize / 2;
-                ctx.drawImage(loadedImages[component.id], logoX, logoY, logoSize, logoSize);
-              } else {
-                // Default Salesforce logo placeholder
+              try {
+                // Render the actual Lottie frame
+                await renderLottieFrame(lottieData, properties, lottieFrame, canvas, ctx);
+              } catch (error) {
+                console.error('Error rendering Lottie frame:', error);
+                // Fallback to simplified rendering
+                const centerX = canvas.width / 2;
+                const centerY = canvas.height / 2;
+                
+                ctx.fillStyle = '#ffffff';
+                ctx.beginPath();
+                ctx.arc(centerX, centerY, 200, 0, 2 * Math.PI);
+                ctx.fill();
+                
                 ctx.fillStyle = '#184cb4';
                 ctx.font = 'bold 32px Arial';
                 ctx.textAlign = 'center';
@@ -369,22 +489,6 @@ export default function ProjectEditor() {
                 ctx.font = 'bold 24px Arial';
                 ctx.fillText('LOGO', centerX, centerY + 25);
               }
-              
-              // Draw the split animation effect
-              // This creates a wipe effect from left to right
-              const splitProgress = Math.min(1, progress * 1.5); // Speed up the split
-              if (splitProgress > 0) {
-                ctx.fillStyle = properties.backgroundColor || '#184cb4';
-                const splitWidth = splitProgress * canvas.width;
-                ctx.fillRect(0, 0, splitWidth, canvas.height);
-              }
-              
-              // Add some visual polish
-              ctx.strokeStyle = '#cccccc';
-              ctx.lineWidth = 3;
-              ctx.beginPath();
-              ctx.arc(centerX, centerY, 200, 0, 2 * Math.PI);
-              ctx.stroke();
             } else {
               // For other component types, render a placeholder
               ctx.fillStyle = '#ffffff';
@@ -499,55 +603,14 @@ export default function ProjectEditor() {
           </div>
         </div>
         <div className="flex items-center space-x-2">
-                  <div className="space-y-3">
-                    {/* Video Format Selection */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Video Format
-                      </label>
-                      <select
-                        value={videoFormat}
-                        onChange={(e) => setVideoFormat(e.target.value as 'mp4' | 'webm' | 'mov')}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
-                        disabled={isRendering}
-                      >
-                        <option value="mp4">MP4 (H.264) - Most Compatible</option>
-                        <option value="webm">WebM (VP9) - Web Optimized</option>
-                        <option value="mov">MOV (H.264) - Professional</option>
-                      </select>
-                    </div>
-
-                    {/* Alpha Channel Option */}
-                    <div>
-                      <label className="flex items-center">
-                        <input
-                          type="checkbox"
-                          checked={hasAlphaChannel}
-                          onChange={(e) => setHasAlphaChannel(e.target.checked)}
-                          disabled={isRendering}
-                          className="mr-2"
-                        />
-                        <span className="text-sm font-medium text-gray-700">
-                          Transparent Background (Alpha Channel)
-                        </span>
-                      </label>
-                      <p className="text-xs text-gray-500 mt-1">
-                        {hasAlphaChannel 
-                          ? 'Video will have transparent background - ideal for overlays'
-                          : 'Video will have solid background color'
-                        }
-                      </p>
-                    </div>
-
-                    <button
-                      onClick={downloadVideo}
-                      disabled={isRendering || timeline.length === 0}
-                      className="w-full flex items-center justify-center px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <ArrowDownTrayIcon className="h-4 w-4 mr-2" />
-                      {isRendering ? 'Rendering...' : `Download ${videoFormat.toUpperCase()}`}
-                    </button>
-                  </div>
+          <button
+            onClick={() => setShowDownloadModal(true)}
+            disabled={isRendering || timeline.length === 0}
+            className="flex items-center px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <ArrowDownTrayIcon className="h-4 w-4 mr-2" />
+            {isRendering ? 'Rendering...' : 'Download Video'}
+          </button>
           <button
             onClick={saveProject}
             disabled={loading}
@@ -847,6 +910,76 @@ export default function ProjectEditor() {
           </div>
         </div>
       </div>
+
+      {/* Download Modal */}
+      {showDownloadModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-96 max-w-md mx-4">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Download Video</h3>
+            
+            <div className="space-y-4">
+              {/* Video Format Selection */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Video Format
+                </label>
+                <select
+                  value={videoFormat}
+                  onChange={(e) => setVideoFormat(e.target.value as 'mp4' | 'webm' | 'mov')}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                  disabled={isRendering}
+                >
+                  <option value="mp4">MP4 (H.264) - Most Compatible</option>
+                  <option value="webm">WebM (VP9) - Web Optimized</option>
+                  <option value="mov">MOV (H.264) - Professional</option>
+                </select>
+              </div>
+
+              {/* Alpha Channel Option */}
+              <div>
+                <label className="flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={hasAlphaChannel}
+                    onChange={(e) => setHasAlphaChannel(e.target.checked)}
+                    disabled={isRendering}
+                    className="mr-2"
+                  />
+                  <span className="text-sm font-medium text-gray-700">
+                    Transparent Background (Alpha Channel)
+                  </span>
+                </label>
+                <p className="text-xs text-gray-500 mt-1">
+                  {hasAlphaChannel 
+                    ? 'Video will have transparent background - ideal for overlays'
+                    : 'Video will have solid background color'
+                  }
+                </p>
+              </div>
+            </div>
+
+            <div className="flex justify-end space-x-3 mt-6">
+              <button
+                onClick={() => setShowDownloadModal(false)}
+                disabled={isRendering}
+                className="px-4 py-2 text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  setShowDownloadModal(false);
+                  downloadVideo();
+                }}
+                disabled={isRendering || timeline.length === 0}
+                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isRendering ? 'Rendering...' : `Download ${videoFormat.toUpperCase()}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
