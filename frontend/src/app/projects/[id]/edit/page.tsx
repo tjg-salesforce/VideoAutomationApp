@@ -111,6 +111,16 @@ export default function ProjectEditor() {
       order: timeline.length
     };
 
+    // Set default properties for the component
+    setComponentProperties(prev => ({
+      ...prev,
+      [draggedComponent.id]: {
+        backgroundColor: '#184cb4', // Default blue background
+        logoScale: 1,
+        customerLogo: null
+      }
+    }));
+
     const newTimeline = [...timeline, newItem].sort((a, b) => a.start_time - b.start_time);
     setTimeline(newTimeline);
     calculateTotalDuration(newTimeline);
@@ -639,92 +649,11 @@ export default function ProjectEditor() {
                 </h3>
                 
                 <div className="space-y-4">
-                  {/* Timeline Properties */}
-                  <div className="border-b border-gray-200 pb-4">
-                    <h4 className="text-sm font-medium text-gray-700 mb-3">Timeline</h4>
-                    <div className="space-y-3">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Start Time (seconds)
-                        </label>
-                        <input
-                          type="number"
-                          value={selectedTimelineItem.start_time}
-                          onChange={(e) => updateTimelineItem(selectedTimelineItem.id, { 
-                            start_time: parseFloat(e.target.value) || 0 
-                          })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
-                        />
-                      </div>
-                      
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Duration (seconds)
-                        </label>
-                        <input
-                          type="number"
-                          value={selectedTimelineItem.duration}
-                          onChange={(e) => updateTimelineItem(selectedTimelineItem.id, { 
-                            duration: parseFloat(e.target.value) || 1 
-                          })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
                   {/* Component Properties */}
                   <div className="border-b border-gray-200 pb-4">
                     <h4 className="text-sm font-medium text-gray-700 mb-3">Component Settings</h4>
                     <div className="space-y-3">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Background Color
-                        </label>
-                        <input
-                          type="color"
-                          value={componentProperties[selectedTimelineItem.component.id]?.backgroundColor || '#184cb4'}
-                          onChange={(e) => {
-                            const newProps = {
-                              ...componentProperties,
-                              [selectedTimelineItem.component.id]: {
-                                ...componentProperties[selectedTimelineItem.component.id],
-                                backgroundColor: e.target.value
-                              }
-                            };
-                            setComponentProperties(newProps);
-                          }}
-                          className="w-full h-10 border border-gray-300 rounded-md cursor-pointer"
-                        />
-                      </div>
-                      
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Logo Scale
-                        </label>
-                        <input
-                          type="range"
-                          min="0.1"
-                          max="2"
-                          step="0.1"
-                          value={componentProperties[selectedTimelineItem.component.id]?.logoScale || 1}
-                          onChange={(e) => {
-                            const newProps = {
-                              ...componentProperties,
-                              [selectedTimelineItem.component.id]: {
-                                ...componentProperties[selectedTimelineItem.component.id],
-                                logoScale: parseFloat(e.target.value)
-                              }
-                            };
-                            setComponentProperties(newProps);
-                          }}
-                          className="w-full"
-                        />
-                        <div className="text-xs text-gray-500 text-center">
-                          {componentProperties[selectedTimelineItem.component.id]?.logoScale || 1}x
-                        </div>
-                      </div>
-
+                      {/* Logo Upload - First */}
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
                           Custom Logo Upload
@@ -759,6 +688,56 @@ export default function ProjectEditor() {
                             Current: {componentProperties[selectedTimelineItem.component.id].customerLogo.name}
                           </div>
                         )}
+                      </div>
+
+                      {/* Background Color - Second */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Background Color
+                        </label>
+                        <input
+                          type="color"
+                          value={componentProperties[selectedTimelineItem.component.id]?.backgroundColor || '#184cb4'}
+                          onChange={(e) => {
+                            const newProps = {
+                              ...componentProperties,
+                              [selectedTimelineItem.component.id]: {
+                                ...componentProperties[selectedTimelineItem.component.id],
+                                backgroundColor: e.target.value
+                              }
+                            };
+                            setComponentProperties(newProps);
+                          }}
+                          className="w-full h-10 border border-gray-300 rounded-md cursor-pointer"
+                        />
+                      </div>
+                      
+                      {/* Logo Scale - Third */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Logo Scale
+                        </label>
+                        <input
+                          type="range"
+                          min="0.1"
+                          max="2"
+                          step="0.1"
+                          value={componentProperties[selectedTimelineItem.component.id]?.logoScale || 1}
+                          onChange={(e) => {
+                            const newProps = {
+                              ...componentProperties,
+                              [selectedTimelineItem.component.id]: {
+                                ...componentProperties[selectedTimelineItem.component.id],
+                                logoScale: parseFloat(e.target.value)
+                              }
+                            };
+                            setComponentProperties(newProps);
+                          }}
+                          className="w-full"
+                        />
+                        <div className="text-xs text-gray-500 text-center">
+                          {componentProperties[selectedTimelineItem.component.id]?.logoScale || 1}x
+                        </div>
                       </div>
                     </div>
                   </div>
