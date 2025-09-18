@@ -618,7 +618,7 @@ export default function ProjectEditor() {
                 console.log(`Rendering CSS frame ${frame} at time ${currentTime}, progress: ${progress}`);
                 
                 // Render the CSS animation directly to canvas
-                renderLogoSplitFrame(ctx, frame, totalFrames, componentProperties[component.id] || {});
+                renderLogoSplitFrame(ctx, frame, totalFrames, componentProperties[component.id] || {}, loadedImages, component);
               } else {
                 // For other component types, render a placeholder
                 ctx.fillStyle = '#ffffff';
@@ -675,7 +675,7 @@ export default function ProjectEditor() {
   };
 
   // CSS-based logo split animation rendering
-  const renderLogoSplitFrame = (ctx: CanvasRenderingContext2D, frame: number, totalFrames: number, properties: any) => {
+  const renderLogoSplitFrame = (ctx: CanvasRenderingContext2D, frame: number, totalFrames: number, properties: any, loadedImages: { [key: string]: HTMLImageElement }, component: any) => {
     const progress = frame / totalFrames;
     const backgroundColor = properties.backgroundColor || '#fca5a5';
     const salesforceColor = 'rgb(0, 162, 225)'; // Salesforce blue
@@ -687,15 +687,15 @@ export default function ProjectEditor() {
       console.log('Salesforce logo should be at:', ctx.canvas.width * 0.75, 'px from left');
     }
     
-    // Calculate animation phases - matching preview timing
+    // Calculate animation phases - matching CSS component timing exactly
     const customerBgPhase = Math.min(1, progress * 3.57); // Customer background completes in first 0.7s (14% of timeline) - much slower growth
     const customerLogoPhase = Math.min(1, progress * 7.14); // Customer logo - faster growth, original speed
     const salesforceBgPhase = Math.min(1, Math.max(0, (progress - 0.01) * 10)); // Salesforce background starts at 0.05s - leads the logo, starts much earlier
     const salesforceLogoPhase = Math.min(1, Math.max(0, (progress - 0.06) * 8.33)); // Salesforce logo starts at 0.3s - follows the background, moved back by 0.05s
-  const holdPhase = Math.min(1, Math.max(0, (progress - 0.16) * 2.5)); // Hold from 0.16s to 0.56s
-  const outPhase = Math.min(1, Math.max(0, (progress - 0.56) * 2.5)); // Out phase from 0.56s
-  const customerOutPhase = Math.min(1, Math.max(0, (progress - 0.5) * 2.5)); // Customer logo exit starts at 0.5s
-  const customerBgOutPhase = Math.min(1, Math.max(0, (progress - 1.0) * 2.5)); // Customer background exit starts at 1.0s (0.5s later)
+    const holdPhase = Math.min(1, Math.max(0, (progress - 0.16) * 2.5)); // Hold from 0.16s to 0.56s
+    const outPhase = Math.min(1, Math.max(0, (progress - 0.56) * 3.125)); // Out phase from 0.56s - 25% faster
+    const customerOutPhase = Math.min(1, Math.max(0, (progress - 0.53) * 3.125)); // Customer logo exit starts at 0.53s - 25% faster
+    const customerBgOutPhase = Math.min(1, Math.max(0, (progress - 0.56) * 3.125)); // Customer background exit starts at 0.56s - 25% faster
     
     // Draw customer background circle - grows slower, similar speed to white circle
     if (customerBgPhase > 0) {
@@ -746,13 +746,38 @@ export default function ProjectEditor() {
       ctx.shadowBlur = 0;
       ctx.shadowOffsetY = 0;
       
-      // Logo text
-      ctx.fillStyle = '#333';
-      ctx.font = 'bold 48px Inter, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText('Customer', logoX, logoY - 20);
-      ctx.fillText('Logo', logoX, logoY + 20);
+      // Customer logo image
+      if (properties.customerLogo && properties.customerLogo.data) {
+        // Use preloaded image if available
+        const img = loadedImages[component.id] || new Image();
+        if (img.complete && img.naturalWidth > 0) {
+          // Draw the customer logo image scaled to fit the circle
+          const logoScale = properties.logoScale || 1;
+          const scaledRadius = logoRadius * 0.6 * logoScale; // 60% of circle radius, scaled by user setting
+          ctx.save();
+          ctx.beginPath();
+          ctx.arc(logoX, logoY, logoRadius, 0, 2 * Math.PI);
+          ctx.clip(); // Clip to circle
+          ctx.drawImage(img, logoX - scaledRadius, logoY - scaledRadius, scaledRadius * 2, scaledRadius * 2);
+          ctx.restore();
+        } else {
+          // Fallback text if image not ready
+          ctx.fillStyle = '#333';
+          ctx.font = 'bold 48px Inter, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText('Customer', logoX, logoY - 20);
+          ctx.fillText('Logo', logoX, logoY + 20);
+        }
+      } else {
+        // Fallback text if no image
+        ctx.fillStyle = '#333';
+        ctx.font = 'bold 48px Inter, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('Customer', logoX, logoY - 20);
+        ctx.fillText('Logo', logoX, logoY + 20);
+      }
     }
     
     // Draw Salesforce logo circle - follows background, starts full size, lands at 75%
@@ -807,26 +832,23 @@ export default function ProjectEditor() {
       ctx.restore();
     }
 
-    // Handle customer background stinger effect (starts 0.5s later at 1.0s)
+    // Handle customer background slide out (starts same time as blue circle)
     if (customerBgOutPhase > 0) {
       const customerX = ctx.canvas.width * 0.25;
       const customerY = ctx.canvas.height * 0.5;
       const customerRadius = Math.min(ctx.canvas.width, ctx.canvas.height) * 0.4;
       
-      // Transform circle into rectangle that extends to right edge
-      const stingerScale = 1 + (customerBgOutPhase * 2); // Grows horizontally to 3x width
-      const customerBgSlideOffset = customerBgOutPhase * ctx.canvas.width * 2; // Slower slide for stinger effect
+      // Slide the green circle out to the left
+      const customerBgSlideOffset = customerBgOutPhase * ctx.canvas.width * 2; // Same speed as blue circle
       
       ctx.save();
       ctx.translate(-customerBgSlideOffset, 0);
       
-      // Draw stinger rectangle instead of circle
-      const stingerWidth = customerRadius * 2 * stingerScale;
-      const stingerHeight = customerRadius * 2;
-      const stingerX = customerX - customerRadius; // Start from left edge of original circle
-      
+      // Draw circle (not rectangle)
       ctx.fillStyle = backgroundColor;
-      ctx.fillRect(stingerX, customerY - customerRadius, stingerWidth, stingerHeight);
+      ctx.beginPath();
+      ctx.arc(customerX, customerY, customerRadius, 0, 2 * Math.PI);
+      ctx.fill();
       
       ctx.restore();
     }
