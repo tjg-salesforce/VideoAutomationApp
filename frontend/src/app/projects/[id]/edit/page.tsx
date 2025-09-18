@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { PlayIcon, PauseIcon, TrashIcon, ArrowLeftIcon } from '@heroicons/react/24/outline';
+import { PlayIcon, PauseIcon, TrashIcon, ArrowLeftIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
 import { Project, Component, TimelineItem } from '@/types';
 import { apiEndpoints } from '@/lib/api';
 import ComponentRenderer from '@/components/ComponentRenderer';
@@ -23,6 +23,7 @@ export default function ProjectEditor() {
   const [loading, setLoading] = useState(false);
   const [draggedComponent, setDraggedComponent] = useState<Component | null>(null);
   const [showComponentLibrary, setShowComponentLibrary] = useState(true);
+  const [isRendering, setIsRendering] = useState(false);
   
   // Component properties state
   const [componentProperties, setComponentProperties] = useState<{[key: string]: any}>({});
@@ -155,6 +156,65 @@ export default function ProjectEditor() {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
+  const downloadVideo = async () => {
+    if (timeline.length === 0) {
+      alert('No components in timeline to render');
+      return;
+    }
+
+    setIsRendering(true);
+    try {
+      // For now, we'll create a simple MP4 using canvas recording
+      // This is a basic implementation - in production you'd want more sophisticated rendering
+      const canvas = document.createElement('canvas');
+      canvas.width = 1920;
+      canvas.height = 1080;
+      const ctx = canvas.getContext('2d');
+      
+      if (!ctx) {
+        throw new Error('Could not get canvas context');
+      }
+
+      // Set background
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // For now, just show a message that rendering is in progress
+      // In a real implementation, you'd render each frame of the Lottie animation
+      ctx.fillStyle = '#000000';
+      ctx.font = '48px Arial';
+      ctx.textAlign = 'center';
+      ctx.fillText('Video Rendering', canvas.width / 2, canvas.height / 2 - 50);
+      ctx.fillText('Coming Soon!', canvas.width / 2, canvas.height / 2 + 50);
+      ctx.fillText(`Timeline: ${timeline.length} components`, canvas.width / 2, canvas.height / 2 + 100);
+
+      // Convert canvas to blob and download
+      canvas.toBlob((blob) => {
+        if (blob) {
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `${project?.name || 'video'}.png`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        }
+      }, 'image/png');
+
+      // Simulate rendering time
+      setTimeout(() => {
+        setIsRendering(false);
+        alert('Video export started! This is a placeholder - full video rendering will be implemented soon.');
+      }, 2000);
+
+    } catch (error) {
+      console.error('Error rendering video:', error);
+      setIsRendering(false);
+      alert('Error rendering video. Please try again.');
+    }
+  };
+
   const getCurrentComponent = () => {
     // Find the component that should be playing at current time
     const currentItem = timeline.find(item => 
@@ -245,6 +305,14 @@ export default function ProjectEditor() {
           </div>
         </div>
         <div className="flex items-center space-x-2">
+          <button
+            onClick={downloadVideo}
+            disabled={isRendering || timeline.length === 0}
+            className="flex items-center px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <ArrowDownTrayIcon className="h-4 w-4 mr-2" />
+            {isRendering ? 'Rendering...' : 'Download Video'}
+          </button>
           <button
             onClick={saveProject}
             disabled={loading}
