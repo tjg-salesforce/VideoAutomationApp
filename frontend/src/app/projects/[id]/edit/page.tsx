@@ -269,11 +269,22 @@ export default function ProjectEditor() {
     const container = document.createElement('div');
     container.style.position = 'absolute';
     container.style.left = '-9999px';
+    container.style.top = '-9999px';
     container.style.width = '1920px';
     container.style.height = '1080px';
+    container.style.visibility = 'visible'; // Make visible for initialization
+    container.style.pointerEvents = 'none';
+    container.style.zIndex = '-1';
     document.body.appendChild(container);
 
     // Create Lottie instance
+    console.log('Creating Lottie instance for video rendering with data:', {
+      width: updatedData.w,
+      height: updatedData.h,
+      frames: updatedData.op - updatedData.ip,
+      containerSize: `${container.offsetWidth}x${container.offsetHeight}`
+    });
+    
     const lottieInstance = lottie.loadAnimation({
       container: container,
       renderer: 'canvas',
@@ -286,6 +297,74 @@ export default function ProjectEditor() {
         hideOnTransparent: false
       }
     });
+
+    // Force render the first frame to ensure canvas is populated
+    lottieInstance.addEventListener('DOMLoaded', () => {
+      console.log('Lottie DOM loaded, forcing first frame render');
+      lottieInstance.goToAndStop(0, true);
+      
+      // Check if canvas has content after forcing render
+      setTimeout(() => {
+        console.log('Checking Lottie renderer after DOMLoaded:', {
+          hasRenderer: !!lottieInstance.renderer,
+          rendererType: lottieInstance.renderer?.type,
+          hasCanvas: !!lottieInstance.renderer?.canvas,
+          canvasSize: lottieInstance.renderer?.canvas ? `${lottieInstance.renderer.canvas.width}x${lottieInstance.renderer.canvas.height}` : 'N/A',
+          rendererKeys: lottieInstance.renderer ? Object.keys(lottieInstance.renderer) : 'N/A'
+        });
+        
+        const canvas = lottieInstance.renderer?.canvas;
+        if (canvas) {
+          const testCtx = canvas.getContext('2d');
+          const imageData = testCtx.getImageData(0, 0, Math.min(10, canvas.width), Math.min(10, canvas.height));
+          const hasContent = imageData.data.some(pixel => pixel !== 0);
+          console.log('Canvas content check after forced render:', hasContent);
+        } else {
+          console.warn('Canvas not available after DOMLoaded event');
+        }
+      }, 100);
+    });
+
+    // Add more debugging events
+    lottieInstance.addEventListener('error', (error) => {
+      console.error('Lottie instance error:', error);
+    });
+
+    lottieInstance.addEventListener('complete', () => {
+      console.log('Lottie animation complete');
+    });
+
+    lottieInstance.addEventListener('loopComplete', () => {
+      console.log('Lottie loop complete');
+    });
+
+    // Add debugging
+    lottieInstance.addEventListener('DOMLoaded', () => {
+      // Use setTimeout to ensure renderer is fully initialized
+      setTimeout(() => {
+        if (lottieInstance.renderer && lottieInstance.renderer.canvas) {
+          console.log('Lottie instance loaded for video rendering, canvas size:', lottieInstance.renderer.canvas.width, 'x', lottieInstance.renderer.canvas.height);
+        } else {
+          console.log('Lottie instance loaded for video rendering, but renderer not ready yet');
+        }
+      }, 50);
+    });
+
+    lottieInstance.addEventListener('data_ready', () => {
+      console.log('Lottie data ready for video rendering');
+    });
+
+    // Debug renderer immediately after creation
+    setTimeout(() => {
+      console.log('Immediate renderer check after Lottie creation:', {
+        hasInstance: !!lottieInstance,
+        hasRenderer: !!lottieInstance.renderer,
+        rendererType: lottieInstance.renderer?.type,
+        hasCanvas: !!lottieInstance.renderer?.canvas,
+        canvasSize: lottieInstance.renderer?.canvas ? `${lottieInstance.renderer.canvas.width}x${lottieInstance.renderer.canvas.height}` : 'N/A',
+        rendererKeys: lottieInstance.renderer ? Object.keys(lottieInstance.renderer) : 'N/A'
+      });
+    }, 50);
 
     return { lottieInstance, container };
   };
@@ -408,6 +487,21 @@ export default function ProjectEditor() {
 
       // Wait for all images to load before starting video rendering
       Promise.all(imagePromises).then(() => {
+        // Check if Lottie data is loaded
+        if (!lottieData) {
+          console.error('Lottie data not loaded, cannot render video');
+          alert('Animation data not loaded. Please refresh and try again.');
+          setIsRendering(false);
+          return;
+        }
+
+        console.log('Starting video rendering with Lottie data:', {
+          width: lottieData.w,
+          height: lottieData.h,
+          frames: lottieData.op - lottieData.ip,
+          layers: lottieData.layers?.length || 0
+        });
+
         // Create Lottie instances for each component that needs them
         const lottieInstances: { [key: string]: { lottieInstance: any, container: HTMLElement } } = {};
         
@@ -420,22 +514,56 @@ export default function ProjectEditor() {
         });
 
         // Wait for all Lottie instances to be ready
-        const lottieReadyPromises = Object.values(lottieInstances).map(({ lottieInstance }) => {
-          return new Promise<void>((resolve) => {
-            if (lottieInstance.isLoaded) {
-              resolve();
-            } else {
-              lottieInstance.addEventListener('DOMLoaded', () => resolve());
-            }
+        const lottieReadyPromises = Object.values(lottieInstances).map(({ lottieInstance, container }, index) => {
+          return new Promise<void>((resolve, reject) => {
+            let attempts = 0;
+            const maxAttempts = 50; // 5 seconds max wait time
+            
+            const checkReady = () => {
+              attempts++;
+              console.log(`Checking Lottie instance ${index + 1}, attempt ${attempts}/${maxAttempts}`);
+
+              // Simple check - just see if the instance exists and has a renderer
+              const isReady = lottieInstance && lottieInstance.renderer;
+
+              if (isReady) {
+                console.log(`Lottie instance ${index + 1} ready`);
+                console.log('Renderer details:', {
+                  hasRenderer: !!lottieInstance.renderer,
+                  rendererType: lottieInstance.renderer?.type,
+                  hasCanvas: !!lottieInstance.renderer?.canvas,
+                  canvasSize: lottieInstance.renderer?.canvas ? `${lottieInstance.renderer.canvas.width}x${lottieInstance.renderer.canvas.height}` : 'N/A',
+                  rendererKeys: lottieInstance.renderer ? Object.keys(lottieInstance.renderer) : 'N/A'
+                });
+                resolve();
+              } else if (attempts >= maxAttempts) {
+                console.error(`Lottie instance ${index + 1} failed to initialize after ${maxAttempts} attempts`);
+                console.log('Lottie instance state:', {
+                  hasInstance: !!lottieInstance,
+                  hasRenderer: !!(lottieInstance && lottieInstance.renderer),
+                  containerSize: `${container.offsetWidth}x${container.offsetHeight}`
+                });
+                reject(new Error(`Lottie instance ${index + 1} failed to initialize`));
+              } else {
+                console.log(`Lottie instance ${index + 1} not ready yet, checking again...`);
+                setTimeout(checkReady, 100);
+              }
+            };
+            
+            // Start checking immediately
+            checkReady();
           });
         });
 
         Promise.all(lottieReadyPromises).then(() => {
-          // Render timeline components frame by frame
-          const fps = 60; // Match the capture stream fps
-          const frameDuration = 1000 / fps; // ms per frame
-          let currentFrame = 0;
-          const totalFrames = Math.ceil(totalDuration * fps);
+          // Add a delay to ensure Lottie instances are fully rendered
+          setTimeout(() => {
+            console.log('Starting frame-by-frame rendering...');
+            // Render timeline components frame by frame
+            const fps = 60; // Match the capture stream fps
+            const frameDuration = 1000 / fps; // ms per frame
+            let currentFrame = 0;
+            const totalFrames = Math.ceil(totalDuration * fps);
 
           const renderFrame = () => {
             if (currentFrame >= totalFrames) {
@@ -478,17 +606,72 @@ export default function ProjectEditor() {
               if (component.type === 'customer_logo_split' && lottieInstances[component.id]) {
                 const { lottieInstance } = lottieInstances[component.id];
                 
-                // Calculate the frame number within the Lottie animation
-                const progress = Math.min(1, (currentTime - currentItem.start_time) / currentItem.duration);
-                const lottieFrame = Math.floor(progress * (lottieData.op - lottieData.ip)); // op = out point, ip = in point
-                
-                // Go to the specific frame
-                lottieInstance.goToAndStop(lottieFrame, true);
-                
-                // Get the canvas from Lottie and draw it to our main canvas
-                const lottieCanvas = lottieInstance.renderer.canvas;
-                if (lottieCanvas) {
-                  ctx.drawImage(lottieCanvas, 0, 0, canvas.width, canvas.height);
+                // Check if Lottie instance is fully ready
+                if (!lottieInstance || !lottieInstance.renderer) {
+                  console.warn(`Lottie instance not ready for component ${component.id}`);
+                  // Draw a placeholder to indicate the issue
+                  ctx.fillStyle = '#ff0000';
+                  ctx.font = '48px Arial';
+                  ctx.textAlign = 'center';
+                  ctx.fillText(`Lottie Not Ready: ${component.name}`, canvas.width / 2, canvas.height / 2);
+                } else {
+                  // Calculate the frame number within the Lottie animation
+                  const progress = Math.min(1, (currentTime - currentItem.start_time) / currentItem.duration);
+                  const lottieFrame = Math.floor(progress * (lottieData.op - lottieData.ip)); // op = out point, ip = in point
+                  
+                  // Go to the specific frame
+                  lottieInstance.goToAndStop(lottieFrame, true);
+                  
+                  // Force a render first to ensure canvas is populated
+                  // Note: Lottie doesn't have a direct render() method, goToAndStop should trigger rendering
+                  
+                  // Try multiple ways to get the canvas
+                  let lottieCanvas = lottieInstance.renderer.canvas;
+                  
+                  // If canvas is not available through renderer, try to find it in the container
+                  if (!lottieCanvas) {
+                    const container = lottieInstance.renderer.element;
+                    lottieCanvas = container?.querySelector('canvas');
+                  }
+                  
+                  // If still not found, try to find it in the renderer element
+                  if (!lottieCanvas && lottieInstance.renderer.element) {
+                    lottieCanvas = lottieInstance.renderer.element.querySelector('canvas');
+                  }
+                  
+                  // Debug the renderer state
+                  console.log(`Frame ${lottieFrame} - Renderer state:`, {
+                    hasRenderer: !!lottieInstance.renderer,
+                    rendererType: lottieInstance.renderer?.type,
+                    hasCanvas: !!lottieCanvas,
+                    canvasSize: lottieCanvas ? `${lottieCanvas.width}x${lottieCanvas.height}` : 'N/A',
+                    rendererKeys: lottieInstance.renderer ? Object.keys(lottieInstance.renderer) : 'N/A',
+                    rendererCanvas: lottieInstance.renderer?.canvas,
+                    rendererElement: lottieInstance.renderer?.element
+                  });
+                  
+                  if (lottieCanvas && lottieCanvas.width > 0 && lottieCanvas.height > 0) {
+                    console.log(`Drawing Lottie frame ${lottieFrame} at time ${currentTime}, canvas size: ${lottieCanvas.width}x${lottieCanvas.height}`);
+
+                    try {
+                      ctx.drawImage(lottieCanvas, 0, 0, canvas.width, canvas.height);
+                      console.log(`Successfully drew Lottie canvas for frame ${lottieFrame}`);
+                    } catch (error) {
+                      console.error(`Error drawing Lottie canvas:`, error);
+                      // Draw a placeholder to indicate the issue
+                      ctx.fillStyle = '#ff0000';
+                      ctx.font = '48px Arial';
+                      ctx.textAlign = 'center';
+                      ctx.fillText(`Draw Error: ${component.name}`, canvas.width / 2, canvas.height / 2);
+                    }
+                  } else {
+                    console.warn(`Lottie canvas not ready for component ${component.id}, frame ${lottieFrame}, canvas:`, lottieCanvas);
+                    // Draw a placeholder to indicate the issue
+                    ctx.fillStyle = '#ff0000';
+                    ctx.font = '48px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(`Lottie Error: ${component.name}`, canvas.width / 2, canvas.height / 2);
+                  }
                 }
               } else {
                 // For other component types, render a placeholder
@@ -508,6 +691,11 @@ export default function ProjectEditor() {
 
           // Start rendering
           renderFrame();
+          }, 500); // 500ms delay to ensure Lottie instances are ready
+        }).catch((error) => {
+          console.error('Failed to initialize Lottie instances:', error);
+          alert('Failed to initialize animation. Please try again.');
+          setIsRendering(false);
         });
       });
 
@@ -531,6 +719,12 @@ export default function ProjectEditor() {
     const currentItem = timeline.find(item => 
       currentTime >= item.start_time && currentTime < item.start_time + item.duration
     );
+    
+    // If no current item but we have components in timeline, show the last component
+    if (!currentItem && timeline.length > 0) {
+      return timeline[timeline.length - 1];
+    }
+    
     return currentItem || null;
   };
 
@@ -636,8 +830,11 @@ export default function ProjectEditor() {
                 <ComponentRenderer
                   component={getCurrentTimelineItem()!.component}
                   properties={componentProperties[getCurrentTimelineItem()!.component.id] || {}}
-                  currentTime={currentTime - getCurrentTimelineItem()!.start_time}
-                  isPlaying={isPlaying}
+                  currentTime={Math.min(
+                    currentTime - getCurrentTimelineItem()!.start_time,
+                    getCurrentTimelineItem()!.duration
+                  )}
+                  isPlaying={isPlaying && currentTime < getCurrentTimelineItem()!.start_time + getCurrentTimelineItem()!.duration}
                   mode="preview"
                 />
               ) : (

@@ -1,0 +1,126 @@
+/* CSS-based Logo Split Animation */
+.logo-split-container {
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(135deg, #184cb4 0%, #0f3a8a 100%);
+  position: relative;
+  overflow: hidden;
+}
+
+.logo-split-left {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%) translateX(-100%);
+  width: 50%;
+  height: 200px;
+  background: linear-gradient(90deg, #ffffff 0%, #f0f0f0 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 48px;
+  font-weight: bold;
+  color: #184cb4;
+  animation: slideInLeft 2s ease-out forwards;
+}
+
+.logo-split-right {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%) translateX(100%);
+  width: 50%;
+  height: 200px;
+  background: linear-gradient(90deg, #f0f0f0 0%, #ffffff 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 48px;
+  font-weight: bold;
+  color: #184cb4;
+  animation: slideInRight 2s ease-out forwards;
+}
+
+.logo-split-center {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 72px;
+  font-weight: bold;
+  color: white;
+  opacity: 0;
+  animation: fadeInCenter 1s ease-out 1s forwards;
+}
+
+@keyframes slideInLeft {
+  0% {
+    transform: translateY(-50%) translateX(-100%);
+  }
+  100% {
+    transform: translateY(-50%) translateX(0%);
+  }
+}
+
+@keyframes slideInRight {
+  0% {
+    transform: translateY(-50%) translateX(100%);
+  }
+  100% {
+    transform: translateY(-50%) translateX(0%);
+  }
+}
+
+@keyframes fadeInCenter {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.8);
+  }
+  100% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+/* Animation controls for video rendering */
+.logo-split-container.paused .logo-split-left,
+.logo-split-container.paused .logo-split-right,
+.logo-split-container.paused .logo-split-center {
+  animation-play-state: paused;
+}
+
+/* Frame-based animation control */
+.logo-split-container[data-frame="0"] .logo-split-left {
+  transform: translateY(-50%) translateX(-100%);
+}
+
+.logo-split-container[data-frame="30"] .logo-split-left {
+  transform: translateY(-50%) translateX(-50%);
+}
+
+.logo-split-container[data-frame="60"] .logo-split-left {
+  transform: translateY(-50%) translateX(0%);
+}
+
+.logo-split-container[data-frame="0"] .logo-split-right {
+  transform: translateY(-50%) translateX(100%);
+}
+
+.logo-split-container[data-frame="30"] .logo-split-right {
+  transform: translateY(-50%) translateX(50%);
+}
+
+.logo-split-container[data-frame="60"] .logo-split-right {
+  transform: translateY(-50%) translateX(0%);
+}
+
+.logo-split-container[data-frame="0"] .logo-split-center,
+.logo-split-container[data-frame="30"] .logo-split-center {
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.8);
+}
+
+.logo-split-container[data-frame="60"] .logo-split-center {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+}
