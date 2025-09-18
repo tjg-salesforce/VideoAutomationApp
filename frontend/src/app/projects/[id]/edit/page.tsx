@@ -164,8 +164,9 @@ export default function ProjectEditor() {
 
     setIsRendering(true);
     try {
-      // For now, we'll create a simple MP4 using canvas recording
-      // This is a basic implementation - in production you'd want more sophisticated rendering
+      console.log('Starting video rendering...');
+      
+      // Create a high-resolution canvas for rendering
       const canvas = document.createElement('canvas');
       canvas.width = 1920;
       canvas.height = 1080;
@@ -175,38 +176,81 @@ export default function ProjectEditor() {
         throw new Error('Could not get canvas context');
       }
 
-      // Set background
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      // Set up MediaRecorder for video capture
+      const stream = canvas.captureStream(30); // 30fps
+      const mediaRecorder = new MediaRecorder(stream, {
+        mimeType: 'video/webm;codecs=vp9'
+      });
 
-      // For now, just show a message that rendering is in progress
-      // In a real implementation, you'd render each frame of the Lottie animation
-      ctx.fillStyle = '#000000';
-      ctx.font = '48px Arial';
-      ctx.textAlign = 'center';
-      ctx.fillText('Video Rendering', canvas.width / 2, canvas.height / 2 - 50);
-      ctx.fillText('Coming Soon!', canvas.width / 2, canvas.height / 2 + 50);
-      ctx.fillText(`Timeline: ${timeline.length} components`, canvas.width / 2, canvas.height / 2 + 100);
-
-      // Convert canvas to blob and download
-      canvas.toBlob((blob) => {
-        if (blob) {
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = `${project?.name || 'video'}.png`;
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          URL.revokeObjectURL(url);
+      const chunks: Blob[] = [];
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          chunks.push(event.data);
         }
-      }, 'image/png');
+      };
 
-      // Simulate rendering time
-      setTimeout(() => {
+      mediaRecorder.onstop = () => {
+        const blob = new Blob(chunks, { type: 'video/webm' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${project?.name || 'video'}.webm`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
         setIsRendering(false);
-        alert('Video export started! This is a placeholder - full video rendering will be implemented soon.');
-      }, 2000);
+        console.log('Video rendering complete!');
+      };
+
+      // Start recording
+      mediaRecorder.start();
+      console.log('MediaRecorder started');
+
+      // Render timeline components frame by frame
+      const fps = 30;
+      const frameDuration = 1000 / fps; // ms per frame
+      let currentFrame = 0;
+      const totalFrames = Math.ceil(totalDuration * fps);
+
+      const renderFrame = () => {
+        if (currentFrame >= totalFrames) {
+          mediaRecorder.stop();
+          return;
+        }
+
+        const currentTime = (currentFrame / fps);
+        const currentItem = timeline.find(item => 
+          currentTime >= item.start_time && currentTime < item.start_time + item.duration
+        );
+
+        // Clear canvas
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        if (currentItem) {
+          // Render the current component
+          const component = currentItem.component;
+          const properties = componentProperties[component.id] || {};
+          
+          // For now, render a placeholder for the component
+          // In a real implementation, you'd render the actual Lottie animation
+          ctx.fillStyle = properties.backgroundColor || '#184cb4';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          
+          ctx.fillStyle = '#ffffff';
+          ctx.font = '48px Arial';
+          ctx.textAlign = 'center';
+          ctx.fillText(component.name, canvas.width / 2, canvas.height / 2);
+          ctx.fillText(`Frame ${currentFrame + 1}/${totalFrames}`, canvas.width / 2, canvas.height / 2 + 60);
+        }
+
+        currentFrame++;
+        setTimeout(renderFrame, frameDuration);
+      };
+
+      // Start rendering
+      renderFrame();
 
     } catch (error) {
       console.error('Error rendering video:', error);
