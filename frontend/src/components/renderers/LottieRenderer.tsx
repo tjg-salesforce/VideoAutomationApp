@@ -34,9 +34,12 @@ const useDebounce = (callback: Function, delay: number) => {
 };
 
 const updateCustomerBgColor = (layers: any[], backgroundColor: string) => {
+  console.log('updateCustomerBgColor called with:', backgroundColor);
   layers.forEach(layer => {
+    console.log('Checking layer:', layer.nm, 'type:', layer.ty);
     // Check if this layer is "CustomerBg"
     if (layer.nm === 'CustomerBg') {
+      console.log('Found CustomerBg layer, updating color to:', backgroundColor);
       if (backgroundColor === 'transparent') {
         layer.ks.o.k = 0;
       } else {
@@ -46,6 +49,7 @@ const updateCustomerBgColor = (layers: any[], backgroundColor: string) => {
             if (shape.ty === 'fl' && shape.c) {
               const rgb = hexToRgb(backgroundColor);
               if (rgb) {
+                console.log('Updating shape color from', shape.c.k, 'to', [rgb.r / 255, rgb.g / 255, rgb.b / 255, 1]);
                 shape.c.k = [rgb.r / 255, rgb.g / 255, rgb.b / 255, 1];
               }
             }
@@ -61,13 +65,17 @@ const updateCustomerBgColor = (layers: any[], backgroundColor: string) => {
   });
 };
 
-const updateCustomerLogo = (layers: any[], customerLogo: any, logoScale: number = 1) => {
+const updateCustomerLogo = (layers: any[], customerLogo: any, logoScale: number = 1, assets: any[]) => {
+  // Update the asset first
+  if (customerLogo && customerLogo.data) {
+    const logoAsset = assets.find(asset => asset.id === '1'); // Customer logo asset ID
+    if (logoAsset) {
+      logoAsset.p = customerLogo.data;
+    }
+  }
+
   layers.forEach(layer => {
     if (layer.nm === 'CustomerLogo') {
-      // Update asset reference
-      // Note: This would need to be handled by the parent component
-      // as we can't modify assets directly here
-      
       // Update scale
       if (logoScale && layer.ks && layer.ks.s) {
         if (Array.isArray(layer.ks.s.k)) {
@@ -92,7 +100,7 @@ const updateCustomerLogo = (layers: any[], customerLogo: any, logoScale: number 
       }
     }
     if (layer.layers) {
-      updateCustomerLogo(layer.layers, customerLogo, logoScale);
+      updateCustomerLogo(layer.layers, customerLogo, logoScale, assets);
     }
   });
 };
@@ -151,7 +159,7 @@ export default function LottieRenderer({
     
     // Update customer logo
     if (properties.customerLogo && properties.customerLogo.data) {
-      updateCustomerLogo(updatedData.layers, properties.customerLogo, properties.logoScale);
+      updateCustomerLogo(updatedData.layers, properties.customerLogo, properties.logoScale, updatedData.assets);
     }
 
     // Create new instance

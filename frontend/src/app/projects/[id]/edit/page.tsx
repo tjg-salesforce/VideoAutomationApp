@@ -164,6 +164,11 @@ export default function ProjectEditor() {
     return currentItem || null;
   };
 
+  const getCurrentComponent = () => {
+    const currentItem = getCurrentTimelineItem();
+    return currentItem ? currentItem.component : null;
+  };
+
   const handlePlayPause = () => {
     if (timeline.length === 0) {
       // No components in timeline, can't play
@@ -178,6 +183,11 @@ export default function ProjectEditor() {
       }
       setIsPlaying(false);
     } else {
+      // If we're at the end, reset to beginning
+      if (currentTime >= totalDuration) {
+        setCurrentTime(0);
+      }
+      
       // Play
       setIsPlaying(true);
       const interval = setInterval(() => {
