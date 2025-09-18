@@ -41,8 +41,7 @@
   background-color: var(--customer-bg-color);
   border-radius: 50%;
   transform: translate(-50%, -50%) scale(0);
-  animation: customerStingerIn var(--animation-duration-in) ease-out forwards,
-             customerStingerOut var(--animation-duration-out) ease-in forwards var(--animation-delay-out-customer);
+  /* Remove CSS animations - we'll control this with JavaScript */
   z-index: 2;
 }
 
@@ -56,8 +55,7 @@
   background-color: var(--salesforce-bg-color);
   border-radius: 50%;
   transform: translate(100vw, -50%); /* Starts off-screen to the right */
-  animation: salesforceSlideIn var(--animation-duration-in) ease-out forwards,
-             salesforceSlideOut var(--animation-duration-out) ease-in forwards var(--animation-delay-out-salesforce-bg);
+  /* Remove CSS animations - we'll control this with JavaScript */
   z-index: 3;
 }
 
@@ -87,15 +85,13 @@
 .customer-logo-circle {
   left: var(--customer-logo-left);
   transform: translate(-50%, -50%) scale(0);
-  animation: customerLogoGrow var(--animation-duration-in) ease-out forwards var(--animation-delay-in-logo),
-             logoSlideOut var(--animation-duration-out) ease-in forwards var(--animation-delay-out-customer);
+  /* Remove CSS animations - we'll control this with JavaScript */
 }
 
 .salesforce-logo-circle {
   left: var(--salesforce-logo-left);
   transform: translate(100vw, -50%) scale(0);
-  animation: salesforceLogoSlideGrowIn var(--animation-duration-in) ease-out forwards var(--animation-delay-in-logo),
-             logoSlideOut var(--animation-duration-out) ease-in forwards var(--animation-delay-out-salesforce-logo);
+  /* Remove CSS animations - we'll control this with JavaScript */
   z-index: 11;
 }
 
