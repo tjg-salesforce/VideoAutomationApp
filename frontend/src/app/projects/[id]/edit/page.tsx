@@ -164,11 +164,6 @@ export default function ProjectEditor() {
     return currentItem || null;
   };
 
-  const getCurrentComponent = () => {
-    const currentItem = getCurrentTimelineItem();
-    return currentItem ? currentItem.component : null;
-  };
-
   const handlePlayPause = () => {
     if (timeline.length === 0) {
       // No components in timeline, can't play
