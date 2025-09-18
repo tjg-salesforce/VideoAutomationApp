@@ -103,6 +103,10 @@ export default function ProjectEditor() {
   const [draggedLayer, setDraggedLayer] = useState<any>(null);
   const [draggedTimelineItem, setDraggedTimelineItem] = useState<any>(null);
   const [draggedMediaItem, setDraggedMediaItem] = useState<any>(null);
+  const [dragPreview, setDragPreview] = useState<{x: number, y: number, time: number, layer: number, snapTarget?: string} | null>(null);
+  const [snapToGrid, setSnapToGrid] = useState(true);
+  const [editingLayerName, setEditingLayerName] = useState<string | null>(null);
+  const [editingLayerValue, setEditingLayerValue] = useState('');
   const [timelineZoom, setTimelineZoom] = useState(1); // 1 = normal, 2 = 2x zoom, 0.5 = half zoom
   const [showComponentLibrary, setShowComponentLibrary] = useState(true);
   const [showMediaLibrary, setShowMediaLibrary] = useState(false);
@@ -111,6 +115,7 @@ export default function ProjectEditor() {
   const [timelineLayers, setTimelineLayers] = useState<{
     id: string;
     name: string;
+    visible: boolean;
     items: {
       id: string;
       asset: any;
@@ -242,6 +247,7 @@ export default function ProjectEditor() {
   const handleDragStart = (e: React.DragEvent, component: Component) => {
     setDraggedComponent(component);
     setDraggedMediaAsset(null);
+    setDragPreview(null); // Clear any existing drag preview
     e.dataTransfer.effectAllowed = 'move';
   };
 
@@ -249,6 +255,7 @@ export default function ProjectEditor() {
     setDraggedMediaAsset(mediaAsset);
     setDraggedComponent(null);
     setDraggedLayer(null);
+    setDragPreview(null); // Clear any existing drag preview
     e.dataTransfer.effectAllowed = 'move';
   };
 
@@ -256,6 +263,7 @@ export default function ProjectEditor() {
     setDraggedLayer(layer);
     setDraggedComponent(null);
     setDraggedMediaAsset(null);
+    setDragPreview(null); // Clear any existing drag preview
     e.dataTransfer.effectAllowed = 'move';
   };
 
@@ -272,12 +280,53 @@ export default function ProjectEditor() {
     setDraggedComponent(null);
     setDraggedMediaAsset(null);
     setDraggedLayer(null);
+    setDragPreview(null); // Clear any existing drag preview
     e.dataTransfer.effectAllowed = 'move';
   };
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
+    
+    // Update drag preview
+    if (timelineRef.current) {
+      const timelineRect = timelineRef.current.getBoundingClientRect();
+    const x = e.clientX - timelineRect.left;
+    const y = e.clientY - timelineRect.top;
+    const timePerPixel = totalDuration / timelineRect.width;
+      const time = Math.max(0, Math.min(totalDuration, x * timePerPixel));
+      const layerHeight = 80;
+      const mainLayerHeight = 80; // Height of main component layer
+      const adjustedY = y - mainLayerHeight;
+      const layer = Math.max(0, Math.floor(adjustedY / layerHeight));
+      
+      let finalTime = time;
+      let snapTarget = null;
+      
+      if (snapToGrid) {
+        // Find snap targets
+        const snapTargets = findSnapTargets(time);
+        console.log('Snap targets found:', snapTargets, 'for time:', time);
+        if (snapTargets.length > 0) {
+          // Use the closest snap target
+          const closest = snapTargets.reduce((prev, curr) => 
+            Math.abs(curr.time - time) < Math.abs(prev.time - time) ? curr : prev
+          );
+          finalTime = closest.time;
+          snapTarget = closest.label;
+          console.log('Snapping to:', closest.label, 'at time:', closest.time);
+      } else {
+          // Fall back to grid snapping
+          finalTime = Math.round(time * 4) / 4;
+          console.log('No snap targets, using grid snap:', finalTime);
+        }
+    } else {
+        // No snapping, use original time
+        finalTime = time;
+      }
+      
+      setDragPreview({ x, y, time: finalTime, layer, snapTarget: snapTarget || undefined });
+    }
   };
 
   const handleMediaUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -339,36 +388,49 @@ export default function ProjectEditor() {
     const x = e.clientX - timelineRect.left;
     const y = e.clientY - timelineRect.top;
     const timePerPixel = totalDuration / timelineRect.width;
-    const startTime = Math.max(0, Math.min(totalDuration, x * timePerPixel));
+    let startTime = Math.max(0, Math.min(totalDuration, x * timePerPixel));
+    
+    // Use the snapped time from drag preview if available
+    if (dragPreview) {
+      startTime = dragPreview.time;
+    } else if (snapToGrid) {
+      startTime = Math.round(startTime * 4) / 4;
+    }
+    
+    // Clear drag preview
+    setDragPreview(null);
 
     if (draggedComponent) {
+      const layerHeight = 80;
+      const targetLayer = Math.floor(y / layerHeight);
+      
       const newItem: TimelineItem = {
         id: `timeline_${Date.now()}`,
         component_id: draggedComponent.id,
-        component: draggedComponent,
+          component: draggedComponent,
         start_time: startTime,
-        duration: draggedComponent.duration || 5,
+          duration: draggedComponent.duration || 5,
         order: timeline.length
-      };
+        };
 
-      // Set default properties for the component
-      setComponentProperties(prev => ({
-        ...prev,
-        [draggedComponent.id]: {
+        // Set default properties for the component
+        setComponentProperties(prev => ({
+          ...prev,
+          [draggedComponent.id]: {
           backgroundColor: '#184cb4', // Default blue background
-          logoScale: 1,
+            logoScale: 1,
           customerLogo: null
-        }
-      }));
+          }
+        }));
 
       const newTimeline = [...timeline, newItem].sort((a, b) => a.start_time - b.start_time);
       setTimeline(newTimeline);
       calculateTotalDuration(newTimeline);
-      
-      // Auto-select the new component and show properties
-      setSelectedTimelineItem(newItem);
-      setShowComponentLibrary(false);
-      setShowMediaLibrary(false);
+        
+        // Auto-select the new component and show properties
+        setSelectedTimelineItem(newItem);
+        setShowComponentLibrary(false);
+        setShowMediaLibrary(false);
       
       setDraggedComponent(null);
     } else if (draggedMediaAsset) {
@@ -405,6 +467,7 @@ export default function ProjectEditor() {
         const newLayer = {
           id: newMediaItem.layerId,
           name: `Layer ${timelineLayers.length + 1}`,
+          visible: true,
           items: [newMediaItem]
         };
         
@@ -415,7 +478,9 @@ export default function ProjectEditor() {
     } else if (draggedLayer) {
       // Handle layer reordering
       const layerHeight = 80; // Height of each layer section
-      const newIndex = Math.floor(y / layerHeight);
+      const mainLayerHeight = 80; // Height of main component layer
+      const adjustedY = y - mainLayerHeight;
+      const newIndex = Math.max(0, Math.floor(adjustedY / layerHeight));
       
       if (newIndex >= 0 && newIndex <= timelineLayers.length) {
         const currentIndex = timelineLayers.findIndex(layer => layer.id === draggedLayer.id);
@@ -448,27 +513,83 @@ export default function ProjectEditor() {
       
       setDraggedTimelineItem(null);
     } else if (draggedMediaItem) {
-      // Handle media item repositioning
+      // Handle media item repositioning or moving between layers
       const timelineRect = e.currentTarget.getBoundingClientRect();
       const x = e.clientX - timelineRect.left;
+      const y = e.clientY - timelineRect.top;
       const timelineWidth = timelineRect.width;
+      const layerHeight = 80;
       const newStartTime = (x / timelineWidth) * totalDuration;
       
-      // Ensure the item doesn't go negative or extend beyond total duration
-      const clampedStartTime = Math.max(0, Math.min(newStartTime, totalDuration - draggedMediaItem.duration));
+      // Calculate target layer index - account for the main component layer (first layer)
+      // Main component layer takes up space, so we need to offset by that
+      const mainLayerHeight = 80; // Height of main component layer
+      const adjustedY = y - mainLayerHeight;
+      const targetLayerIndex = Math.max(0, Math.floor(adjustedY / layerHeight));
       
-      setTimelineLayers(prev => prev.map(layer => 
-        layer.id === draggedMediaItem.layerId
-          ? {
-              ...layer,
-              items: layer.items.map(item =>
+      // Use the snapped time from drag preview if available
+      let finalStartTime = newStartTime;
+      if (dragPreview) {
+        finalStartTime = dragPreview.time;
+      } else {
+        // Ensure the item doesn't go negative or extend beyond total duration
+        const clampedStartTime = Math.max(0, Math.min(newStartTime, totalDuration - draggedMediaItem.duration));
+        
+        // Apply snap to grid if enabled
+        finalStartTime = snapToGrid ? Math.round(clampedStartTime * 4) / 4 : clampedStartTime;
+      }
+      
+      setTimelineLayers(prev => {
+        const newLayers = [...prev];
+        
+        // Find source layer
+        const sourceLayerIndex = newLayers.findIndex(layer => layer.id === draggedMediaItem.layerId);
+        
+        if (sourceLayerIndex !== -1) {
+          // Check if moving within the same layer
+          if (targetLayerIndex >= 0 && targetLayerIndex < newLayers.length && 
+              newLayers[targetLayerIndex].id === draggedMediaItem.layerId) {
+            // Same layer - just update the position
+            newLayers[sourceLayerIndex] = {
+              ...newLayers[sourceLayerIndex],
+              items: newLayers[sourceLayerIndex].items.map(item => 
                 item.id === draggedMediaItem.id
-                  ? { ...item, start_time: clampedStartTime }
+                  ? { ...item, start_time: finalStartTime }
                   : item
               )
+            };
+          } else {
+            // Different layer - remove from source and add to target
+            newLayers[sourceLayerIndex] = {
+              ...newLayers[sourceLayerIndex],
+              items: newLayers[sourceLayerIndex].items.filter(item => item.id !== draggedMediaItem.id)
+            };
+            
+            // Add to target layer (or create new layer if needed)
+            if (targetLayerIndex >= 0 && targetLayerIndex < newLayers.length) {
+              const targetLayer = newLayers[targetLayerIndex];
+              newLayers[targetLayerIndex] = {
+                ...targetLayer,
+                items: [
+                  ...targetLayer.items,
+                  { ...draggedMediaItem, start_time: finalStartTime, layerId: targetLayer.id }
+                ]
+              };
+            } else {
+              // If dropping outside existing layers, create a new layer
+              const newLayerId = `layer_${Date.now()}`;
+              newLayers.push({
+                id: newLayerId,
+                name: `Layer ${newLayers.length + 1}`,
+                visible: true,
+                items: [{ ...draggedMediaItem, start_time: finalStartTime, layerId: newLayerId }]
+              });
             }
-          : layer
-      ));
+          }
+        }
+        
+        return newLayers;
+      });
       
       setDraggedMediaItem(null);
     }
@@ -504,7 +625,7 @@ export default function ProjectEditor() {
       // Include component properties in the timeline items
       const timelineWithProperties = timeline.map(item => ({
         ...item,
-        properties: componentProperties[item.component.id] || {}
+            properties: componentProperties[item.component.id] || {}
       }));
 
       const projectData = {
@@ -561,6 +682,46 @@ export default function ProjectEditor() {
     }
     
     return markers;
+  };
+
+  // Find snap targets for smart snapping
+  const findSnapTargets = (time: number) => {
+    const snapThreshold = 0.1; // 0.1 second threshold
+    const targets = [];
+    
+    // Add 0s mark
+    if (Math.abs(time - 0) < snapThreshold) {
+      targets.push({ time: 0, type: 'start', label: '0s' });
+    }
+    
+    // Add current scrubber position
+    if (Math.abs(time - currentTime) < snapThreshold) {
+      targets.push({ time: currentTime, type: 'scrubber', label: 'Current' });
+    }
+    
+    // Add timeline item boundaries
+    timeline.forEach(item => {
+      if (Math.abs(time - item.start_time) < snapThreshold) {
+        targets.push({ time: item.start_time, type: 'start', label: `${item.component.name} start` });
+      }
+      if (Math.abs(time - (item.start_time + item.duration)) < snapThreshold) {
+        targets.push({ time: item.start_time + item.duration, type: 'end', label: `${item.component.name} end` });
+      }
+    });
+    
+    // Add media item boundaries
+    timelineLayers.forEach(layer => {
+      layer.items.forEach((item: any) => {
+        if (Math.abs(time - item.start_time) < snapThreshold) {
+          targets.push({ time: item.start_time, type: 'start', label: `${item.asset.name} start` });
+        }
+        if (Math.abs(time - (item.start_time + item.duration)) < snapThreshold) {
+          targets.push({ time: item.start_time + item.duration, type: 'end', label: `${item.asset.name} end` });
+        }
+      });
+    });
+    
+    return targets;
   };
 
   // Function to create and configure a Lottie instance for video rendering
@@ -847,91 +1008,18 @@ export default function ProjectEditor() {
 
       // Wait for all images to load before starting video rendering
       Promise.all(imagePromises).then(() => {
-        // Check if Lottie data is loaded
-        if (!lottieData) {
-          console.error('Lottie data not loaded, cannot render video');
-          alert('Animation data not loaded. Please refresh and try again.');
-          setIsRendering(false);
-          return;
-        }
+        // Using CSS-only approach - no Lottie data needed
+        console.log('Starting video rendering with CSS-based approach');
 
-        console.log('Starting video rendering with Lottie data:', {
-          width: lottieData.w,
-          height: lottieData.h,
-          frames: lottieData.op - lottieData.ip,
-          layers: lottieData.layers?.length || 0
-        });
-
-        // Create Lottie instances for each component that needs them
-        const lottieInstances: { [key: string]: { lottieInstance: any, container: HTMLElement } } = {};
-        
-        timeline.forEach(item => {
-          if (item.component.type === 'customer_logo_split' && lottieData) {
-            const properties = componentProperties[item.component.id] || {};
-            const { lottieInstance, container } = createVideoLottieInstance(lottieData, properties);
-            lottieInstances[item.component.id] = { lottieInstance, container };
-          }
-        });
-
-        // Wait for all Lottie instances to be ready
-        const lottieReadyPromises = Object.values(lottieInstances).map(({ lottieInstance, container }, index) => {
-          return new Promise<void>((resolve, reject) => {
-            let attempts = 0;
-            const maxAttempts = 50; // 5 seconds max wait time
-            
-            const checkReady = () => {
-              attempts++;
-              console.log(`Checking Lottie instance ${index + 1}, attempt ${attempts}/${maxAttempts}`);
-
-              // Simple check - just see if the instance exists and has a renderer
-              const isReady = lottieInstance && lottieInstance.renderer;
-
-              if (isReady) {
-                console.log(`Lottie instance ${index + 1} ready`);
-                console.log('Renderer details:', {
-                  hasRenderer: !!lottieInstance.renderer,
-                  rendererType: lottieInstance.renderer?.type,
-                  hasCanvas: !!lottieInstance.renderer?.canvas,
-                  canvasSize: lottieInstance.renderer?.canvas ? `${lottieInstance.renderer.canvas.width}x${lottieInstance.renderer.canvas.height}` : 'N/A',
-                  rendererKeys: lottieInstance.renderer ? Object.keys(lottieInstance.renderer) : 'N/A'
-                });
-                resolve();
-              } else if (attempts >= maxAttempts) {
-                console.error(`Lottie instance ${index + 1} failed to initialize after ${maxAttempts} attempts`);
-                console.log('Lottie instance state:', {
-                  hasInstance: !!lottieInstance,
-                  hasRenderer: !!(lottieInstance && lottieInstance.renderer),
-                  containerSize: `${container.offsetWidth}x${container.offsetHeight}`
-                });
-                reject(new Error(`Lottie instance ${index + 1} failed to initialize`));
-              } else {
-                console.log(`Lottie instance ${index + 1} not ready yet, checking again...`);
-                setTimeout(checkReady, 100);
-              }
-            };
-            
-            // Start checking immediately
-            checkReady();
-          });
-        });
-
-        Promise.all(lottieReadyPromises).then(() => {
-          // Add a delay to ensure Lottie instances are fully rendered
-          setTimeout(() => {
+        // Start CSS-based frame-by-frame rendering
             console.log('Starting frame-by-frame rendering...');
-            // Render timeline components frame by frame
-            const fps = 60; // Match the capture stream fps
-            const frameDuration = 1000 / fps; // ms per frame
+        const fps = 60;
+        const frameDuration = 1000 / fps;
             let currentFrame = 0;
             const totalFrames = Math.ceil(totalDuration * fps);
 
           const renderFrame = () => {
             if (currentFrame >= totalFrames) {
-              // Clean up Lottie instances
-              Object.values(lottieInstances).forEach(({ lottieInstance, container }) => {
-                lottieInstance.destroy();
-                document.body.removeChild(container);
-              });
               mediaRecorder.stop();
               return;
             }
@@ -943,36 +1031,27 @@ export default function ProjectEditor() {
 
             // Clear canvas
             if (hasAlphaChannel) {
-              // Transparent background for alpha channel
               ctx.clearRect(0, 0, canvas.width, canvas.height);
             } else {
-              // White background for standard video
               ctx.fillStyle = '#ffffff';
               ctx.fillRect(0, 0, canvas.width, canvas.height);
             }
 
             if (currentItem) {
-              // Render the current component
               const component = currentItem.component;
               const properties = componentProperties[component.id] || {};
               
-              // Set background color (only if not using alpha channel)
               if (!hasAlphaChannel) {
-                ctx.fillStyle = properties.backgroundColor || '#184cb4';
+                ctx.fillStyle = properties.backgroundColor || '#fca5a5';
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
               }
               
-              // For CSS animation components, render using CSS-based approach
               if (component.type === 'customer_logo_split') {
-                // Use the existing CSS animation rendering approach
                 const progress = Math.min(1, (currentTime - currentItem.start_time) / currentItem.duration);
-                const totalFrames = 300; // 5 seconds at 60fps
+              const totalFrames = 300;
                 const frame = Math.floor(progress * totalFrames);
-                
-                // Render the CSS animation directly to canvas using our existing function
                 renderLogoSplitFrame(ctx, frame, totalFrames, componentProperties[component.id] || {}, loadedImages, component);
               } else {
-                // For other component types, render a placeholder
                 ctx.fillStyle = '#ffffff';
                 ctx.font = '48px Arial';
                 ctx.textAlign = 'center';
@@ -981,20 +1060,12 @@ export default function ProjectEditor() {
             }
 
             currentFrame++;
-            // Use requestAnimationFrame for smoother timing, but cap at our target fps
             setTimeout(() => {
               requestAnimationFrame(renderFrame);
-            }, Math.max(0, frameDuration - 16)); // 16ms is ~60fps, so we don't go faster than that
+          }, Math.max(0, frameDuration - 16));
           };
 
-          // Start rendering
           renderFrame();
-          }, 500); // 500ms delay to ensure Lottie instances are ready
-        }).catch((error) => {
-          console.error('Failed to initialize Lottie instances:', error);
-          alert('Failed to initialize animation. Please try again.');
-          setIsRendering(false);
-        });
       });
 
     } catch (error) {
@@ -1382,7 +1453,7 @@ export default function ProjectEditor() {
             <div className="w-full h-full max-w-6xl relative" style={{ aspectRatio: '16/9' }}>
               {/* Render media layers first (background) */}
               {timelineLayers.map((layer) => 
-                layer.items.map((mediaItem) => {
+                layer.visible && layer.items.map((mediaItem) => {
                   const isActive = currentTime >= mediaItem.start_time && currentTime < mediaItem.start_time + mediaItem.duration;
                   if (!isActive) return null;
                   
@@ -1393,20 +1464,20 @@ export default function ProjectEditor() {
                       style={{ zIndex: 1 }}
                     >
                       {mediaItem.asset.type === 'video' ? (
-                        <VideoTimelineControl
+                          <VideoTimelineControl
                           src={mediaItem.asset.data}
                           startTime={mediaItem.start_time}
                           duration={mediaItem.duration}
-                          currentTime={currentTime}
-                          isPlaying={isPlaying}
-                          className="w-full h-full object-cover rounded-lg"
-                        />
-                      ) : (
-                        <img
+                            currentTime={currentTime}
+                            isPlaying={isPlaying}
+                            className="w-full h-full object-cover rounded-lg"
+                          />
+                        ) : (
+                          <img
                           src={mediaItem.asset.data}
                           alt={mediaItem.asset.name}
-                          className="w-full h-full object-cover rounded-lg"
-                        />
+                            className="w-full h-full object-cover rounded-lg"
+                          />
                       )}
                     </div>
                   );
@@ -1491,27 +1562,24 @@ export default function ProjectEditor() {
 
             {/* Timeline Controls */}
             <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center space-x-2">
-                <span className="text-sm text-gray-600">Zoom:</span>
-                <button
-                  onClick={() => setTimelineZoom(Math.max(0.25, timelineZoom - 0.25))}
-                  className="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded"
-                  disabled={timelineZoom <= 0.25}
-                  title="Zoom out (- key)"
-                >
-                  -
-                </button>
-                <span className="text-sm text-gray-700 min-w-12 text-center">
-                  {Math.round(timelineZoom * 100)}%
-                </span>
-                <button
-                  onClick={() => setTimelineZoom(Math.min(4, timelineZoom + 0.25))}
-                  className="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded"
-                  disabled={timelineZoom >= 4}
-                  title="Zoom in (+ key)"
-                >
-                  +
-                </button>
+              <div className="flex items-center space-x-4">
+                <div className="flex items-center space-x-2">
+                  <span className="text-sm text-gray-600">Zoom:</span>
+                  <input
+                    type="range"
+                    min="0.25"
+                    max="4"
+                    step="0.25"
+                    value={timelineZoom}
+                    onChange={(e) => setTimelineZoom(parseFloat(e.target.value))}
+                    className="w-24 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider"
+                    style={{
+                      background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${((timelineZoom - 0.25) / 3.75) * 100}%, #e5e7eb ${((timelineZoom - 0.25) / 3.75) * 100}%, #e5e7eb 100%)`
+                    }}
+                  />
+                  <span className="text-sm text-gray-700 min-w-12 text-center">
+                    {Math.round(timelineZoom * 100)}%
+                  </span>
                 <button
                   onClick={() => setTimelineZoom(1)}
                   className="px-2 py-1 text-xs bg-blue-100 hover:bg-blue-200 text-blue-700 rounded"
@@ -1519,6 +1587,18 @@ export default function ProjectEditor() {
                 >
                   Reset
                 </button>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <label className="flex items-center space-x-1 text-sm text-gray-600">
+                    <input
+                      type="checkbox"
+                      checked={snapToGrid}
+                      onChange={(e) => setSnapToGrid(e.target.checked)}
+                      className="rounded"
+                    />
+                    <span>Snap to Grid</span>
+                  </label>
+                </div>
               </div>
               <div className="text-sm text-gray-500">
                 Duration: {formatTime(totalDuration)}
@@ -1542,18 +1622,60 @@ export default function ProjectEditor() {
             </div>
 
             {/* Timeline Tracks */}
-            <div 
+            <div
               ref={timelineRef}
-              className="border-2 border-dashed border-gray-300 rounded-lg p-4 overflow-x-auto"
+              className="border-2 border-dashed border-gray-300 rounded-lg p-4 overflow-x-auto relative"
               onDragOver={handleDragOver}
               onDrop={handleDrop}
-              style={{ 
-                transform: `scaleX(${timelineZoom})`,
-                transformOrigin: 'left center'
-              }}
             >
-              {/* Main Component Layer */}
-              <div className="mb-4">
+              {/* Vertical Indicator Line for Current Time */}
+              <div
+                className="absolute top-0 bottom-0 w-0.5 bg-red-500 pointer-events-none z-10"
+                style={{
+                  left: `${(currentTime / totalDuration) * 100}%`,
+                  transform: 'translateX(-50%)'
+                }}
+              >
+                <div className="absolute -top-1 -left-1 w-3 h-3 bg-red-500 rounded-full"></div>
+                  </div>
+              
+              {/* Drag Preview Indicator */}
+              {dragPreview && (
+                <div
+                  className="absolute top-0 bottom-0 w-0.5 bg-blue-400 pointer-events-none z-20 opacity-60"
+                  style={{
+                    left: `${(dragPreview.time / totalDuration) * 100}%`,
+                    transform: 'translateX(-50%)'
+                  }}
+                >
+                  <div className="absolute -top-1 -left-1 w-3 h-3 bg-blue-400 rounded-full"></div>
+                  <div className="absolute top-2 -left-8 text-xs bg-blue-400 text-white px-1 rounded whitespace-nowrap">
+                    {formatTime(dragPreview.time)}
+                    {dragPreview.snapTarget && (
+                      <div className="text-xs text-blue-100 mt-1">
+                        {dragPreview.snapTarget}
+                </div>
+              )}
+            </div>
+                  {/* Layer indicator */}
+                  <div 
+                    className="absolute w-full h-1 bg-blue-400 opacity-30"
+                    style={{ 
+                      top: `${dragPreview.layer * 80 + 80}px` // Account for main component layer
+                    }}
+                  ></div>
+                </div>
+              )}
+              
+              {/* Timeline Content with Zoom Scaling */}
+              <div 
+              style={{ 
+                  transform: `scaleX(${timelineZoom})`,
+                  transformOrigin: 'left center'
+                }}
+              >
+                {/* Main Component Layer */}
+                <div className="mb-4">
                 <div className="flex items-center mb-2">
                   <h4 className="text-sm font-medium text-gray-700">Components</h4>
                   <div className="ml-2 w-3 h-3 bg-blue-500 rounded"></div>
@@ -1605,8 +1727,69 @@ export default function ProjectEditor() {
                     <svg className="w-4 h-4 text-gray-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
                     </svg>
-                    <h4 className="text-sm font-medium text-gray-700">{layer.name}</h4>
+                    
+                    {/* Editable layer name */}
+                    {editingLayerName === layer.id ? (
+                      <input
+                        type="text"
+                        value={editingLayerValue}
+                        onChange={(e) => setEditingLayerValue(e.target.value)}
+                        onBlur={() => {
+                          setTimelineLayers(prev => prev.map(l => 
+                            l.id === layer.id ? { ...l, name: editingLayerValue } : l
+                          ));
+                          setEditingLayerName(null);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            setTimelineLayers(prev => prev.map(l => 
+                              l.id === layer.id ? { ...l, name: editingLayerValue } : l
+                            ));
+                            setEditingLayerName(null);
+                          } else if (e.key === 'Escape') {
+                            setEditingLayerName(null);
+                          }
+                        }}
+                        className="text-sm font-medium text-gray-700 bg-transparent border-none outline-none"
+                        autoFocus
+                      />
+                    ) : (
+                      <h4 
+                        className="text-sm font-medium text-gray-700 cursor-pointer"
+                        onDoubleClick={() => {
+                          setEditingLayerName(layer.id);
+                          setEditingLayerValue(layer.name);
+                        }}
+                      >
+                        {layer.name}
+                      </h4>
+                    )}
+                    
                     <div className="ml-2 w-3 h-3 bg-green-500 rounded"></div>
+                    
+                    {/* Eye icon toggle */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setTimelineLayers(prev => prev.map(l => 
+                          l.id === layer.id ? { ...l, visible: !l.visible } : l
+                        ));
+                      }}
+                      className="ml-2 text-gray-400 hover:text-gray-600"
+                      title={layer.visible ? 'Hide layer' : 'Show layer'}
+                    >
+                      {layer.visible ? (
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                        </svg>
+                      ) : (
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L3 3m6.878 6.878L21 21" />
+                        </svg>
+                      )}
+                    </button>
+                    
                     <button
                       onClick={() => {
                         setTimelineLayers(prev => prev.filter(l => l.id !== layer.id));
@@ -1645,6 +1828,7 @@ export default function ProjectEditor() {
                   </div>
                 </div>
               ))}
+              </div> {/* End of Timeline Content with Zoom Scaling */}
 
               {/* Add New Layer Button */}
               <div className="mt-4">
@@ -1653,6 +1837,7 @@ export default function ProjectEditor() {
                     const newLayer = {
                       id: `layer_${Date.now()}`,
                       name: `Layer ${timelineLayers.length + 1}`,
+                      visible: true,
                       items: []
                     };
                     setTimelineLayers(prev => [...prev, newLayer]);

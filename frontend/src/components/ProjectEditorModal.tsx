@@ -67,11 +67,16 @@ export default function ProjectEditorModal({
     const timePerPixel = totalDuration / timelineRect.width;
     const startTime = Math.max(0, Math.min(totalDuration, x * timePerPixel));
 
+    // Add 1-second offset for logo split component
+    const adjustedStartTime = draggedComponent.type === 'customer_logo_split' 
+      ? startTime + 1 
+      : startTime;
+
     const newItem: TimelineItem = {
       id: `timeline_${Date.now()}`,
       component_id: draggedComponent.id,
       component: draggedComponent,
-      start_time: startTime,
+      start_time: adjustedStartTime,
       duration: draggedComponent.duration || 5,
       order: timeline.length
     };

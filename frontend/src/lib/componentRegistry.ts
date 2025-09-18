@@ -1,7 +1,7 @@
 import React from 'react';
 import { Component } from '@/types';
 
-export type ComponentRendererType = 'lottie' | 'html' | 'canvas' | 'hybrid';
+export type ComponentRendererType = 'html' | 'canvas' | 'hybrid' | 'css';
 
 export interface ComponentRenderer {
   type: ComponentRendererType;
@@ -18,7 +18,6 @@ export interface ComponentRegistry {
 }
 
 // Performance-optimized renderers
-const LottieRenderer = React.lazy(() => import('@/components/renderers/LottieRenderer'));
 const HTMLRenderer = React.lazy(() => import('@/components/renderers/HTMLRenderer'));
 const CanvasRenderer = React.lazy(() => import('@/components/renderers/CanvasRenderer'));
 const HybridRenderer = React.lazy(() => import('@/components/renderers/HybridRenderer'));

@@ -27,10 +27,15 @@ export default function NewProjectModal({ isOpen, onClose, onProjectCreated, tem
     setError(null);
 
     try {
-      await apiEndpoints.createProject(formData);
+      const response = await apiEndpoints.createProject(formData);
+      const newProject = response.data.data;
+      
       onProjectCreated();
       onClose();
       setFormData({ name: '', description: '', template_id: '' });
+      
+      // Navigate to the new project
+      window.location.href = `/projects/${newProject.id}/edit`;
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to create project');
     } finally {
