@@ -154,7 +154,6 @@ export default function ProjectEditor() {
         name: project.name,
         description: project.description,
         timeline: timelineWithProperties,
-        componentProperties: componentProperties, // Also save as separate field
         status: 'in_progress'
       };
       
@@ -201,11 +200,15 @@ export default function ProjectEditor() {
       const stream = canvas.captureStream(30); // 30fps
       
       // Try different MIME types for better compatibility
-      let mimeType = 'video/webm;codecs=vp9';
+      let mimeType = 'video/webm;codecs=vp8';
       if (MediaRecorder.isTypeSupported('video/mp4;codecs=h264')) {
         mimeType = 'video/mp4;codecs=h264';
-      } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp8')) {
-        mimeType = 'video/webm;codecs=vp8';
+        console.log('Using MP4 format');
+      } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) {
+        mimeType = 'video/webm;codecs=vp9';
+        console.log('Using WebM VP9 format');
+      } else {
+        console.log('Using WebM VP8 format (fallback)');
       }
       
       const mediaRecorder = new MediaRecorder(stream, {
@@ -277,31 +280,55 @@ export default function ProjectEditor() {
             const lottieCtx = lottieCanvas.getContext('2d');
             
             if (lottieCtx) {
-              // Set background
-              lottieCtx.fillStyle = properties.backgroundColor || '#184cb4';
+              // Set background color from properties
+              const bgColor = properties.backgroundColor || '#184cb4';
+              lottieCtx.fillStyle = bgColor;
               lottieCtx.fillRect(0, 0, lottieCanvas.width, lottieCanvas.height);
               
-              // For now, render a simplified version of the logo split
-              // In a full implementation, you'd use lottie-web to render each frame
+              // Calculate animation progress
+              const progress = Math.min(1, (currentTime - currentItem.start_time) / currentItem.duration);
               const centerX = lottieCanvas.width / 2;
               const centerY = lottieCanvas.height / 2;
               
-              // Draw the circle background
+              // Draw the white circle (customer logo background)
               lottieCtx.fillStyle = '#ffffff';
               lottieCtx.beginPath();
-              lottieCtx.arc(centerX, centerY, 200, 0, 2 * Math.PI);
+              lottieCtx.arc(centerX, centerY, 150, 0, 2 * Math.PI);
               lottieCtx.fill();
               
-              // Draw the logo placeholder
-              lottieCtx.fillStyle = '#184cb4';
-              lottieCtx.font = 'bold 48px Arial';
-              lottieCtx.textAlign = 'center';
-              lottieCtx.fillText('LOGO', centerX, centerY + 15);
+              // Draw the customer logo (simplified)
+              if (properties.customerLogo && properties.customerLogo.data) {
+                // If there's a custom logo, draw a placeholder for it
+                lottieCtx.fillStyle = '#184cb4';
+                lottieCtx.font = 'bold 32px Arial';
+                lottieCtx.textAlign = 'center';
+                lottieCtx.fillText('CUSTOM', centerX, centerY - 10);
+                lottieCtx.fillText('LOGO', centerX, centerY + 25);
+              } else {
+                // Default Salesforce logo placeholder
+                lottieCtx.fillStyle = '#184cb4';
+                lottieCtx.font = 'bold 28px Arial';
+                lottieCtx.textAlign = 'center';
+                lottieCtx.fillText('SALESFORCE', centerX, centerY - 5);
+                lottieCtx.font = 'bold 20px Arial';
+                lottieCtx.fillText('LOGO', centerX, centerY + 20);
+              }
               
-              // Draw the split effect (simplified)
-              const progress = Math.min(1, (currentTime - currentItem.start_time) / currentItem.duration);
-              lottieCtx.fillStyle = properties.backgroundColor || '#184cb4';
-              lottieCtx.fillRect(centerX - 200 + (progress * 400), centerY - 200, 400 - (progress * 400), 400);
+              // Draw the split animation effect
+              // This creates a wipe effect from left to right
+              const splitProgress = Math.min(1, progress * 2); // Speed up the split
+              if (splitProgress > 0) {
+                lottieCtx.fillStyle = bgColor;
+                const splitWidth = splitProgress * lottieCanvas.width;
+                lottieCtx.fillRect(0, 0, splitWidth, lottieCanvas.height);
+              }
+              
+              // Add some visual polish
+              lottieCtx.strokeStyle = '#cccccc';
+              lottieCtx.lineWidth = 2;
+              lottieCtx.beginPath();
+              lottieCtx.arc(centerX, centerY, 150, 0, 2 * Math.PI);
+              lottieCtx.stroke();
             }
             
             // Copy the Lottie canvas to the main canvas
