@@ -138,6 +138,8 @@ export default function LottieRenderer({
   useEffect(() => {
     if (!lottieData || !containerRef.current || isInitialized) return;
 
+    console.log('Initializing Lottie instance...');
+    
     lottieInstanceRef.current = lottie.loadAnimation({
       container: containerRef.current,
       renderer: 'canvas',
@@ -151,10 +153,12 @@ export default function LottieRenderer({
       }
     });
 
+    console.log('Lottie instance created:', lottieInstanceRef.current);
     setIsInitialized(true);
 
     return () => {
       if (lottieInstanceRef.current) {
+        console.log('Destroying Lottie instance...');
         lottieInstanceRef.current.destroy();
         lottieInstanceRef.current = null;
       }
@@ -164,6 +168,14 @@ export default function LottieRenderer({
   // Update properties by recreating instance efficiently
   useEffect(() => {
     if (!lottieInstanceRef.current || !lottieData || !isInitialized) return;
+
+    // Skip if this is the initial load (no properties changed yet)
+    if (!properties.backgroundColor && !properties.customerLogo && !properties.logoScale) {
+      console.log('Skipping property update - no properties set yet');
+      return;
+    }
+
+    console.log('Updating Lottie properties...', properties);
 
     // Create a copy of the original data and update it
     const updatedData = JSON.parse(JSON.stringify(lottieData));
@@ -178,8 +190,10 @@ export default function LottieRenderer({
     }
 
     // Store current frame and playing state
-    const currentFrame = lottieInstanceRef.current.currentFrame;
+    const currentFrame = lottieInstanceRef.current.currentFrame || 0;
     const wasPlaying = !lottieInstanceRef.current.isPaused;
+
+    console.log('Recreating Lottie instance, currentFrame:', currentFrame, 'wasPlaying:', wasPlaying);
 
     // Destroy and recreate instance with updated data
     lottieInstanceRef.current.destroy();
@@ -204,6 +218,8 @@ export default function LottieRenderer({
     if (wasPlaying) {
       lottieInstanceRef.current.play();
     }
+
+    console.log('Lottie instance recreated successfully');
   }, [lottieData, properties.backgroundColor, properties.customerLogo, properties.logoScale, isInitialized]);
 
   // Handle playback
