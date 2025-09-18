@@ -1,5 +1,11 @@
 # Video Automation Platform - Development Context
 
+## 🚨 IMMEDIATE STATUS UPDATE
+- **Backend Issue**: Heroku backend was showing "Application Error" due to missing "start" script
+- **Action Taken**: Reverted to commit `08b73e3` ("Add timeline zoom controls and fix save functionality")
+- **Next Step**: Test if backend is now working after revert
+- **If Still Broken**: May need to revert further back to find a working commit
+
 ## Project Overview
 **Project Name**: Video Automation Platform (Code Name: "Vibe-Code")  
 **Purpose**: Web-based collaborative video automation platform for Salesforce Solutions Engineers  
