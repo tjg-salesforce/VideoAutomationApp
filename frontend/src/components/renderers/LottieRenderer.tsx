@@ -55,7 +55,13 @@ const useMemoizedLottieData = (lottieData: any, properties: any) => {
 
 const updateCustomerBgColor = (layers: any[], backgroundColor: string) => {
   layers.forEach(layer => {
+    // Debug: Log layer names to see the structure
+    console.log('Checking layer:', layer.nm, 'type:', layer.ty);
+    
+    // Check if this layer is "CustomerBg"
     if (layer.nm === 'CustomerBg') {
+      console.log('Found CustomerBg layer, updating color to:', backgroundColor);
+      
       if (backgroundColor === 'transparent') {
         layer.ks.o.k = 0;
       } else {
@@ -65,6 +71,7 @@ const updateCustomerBgColor = (layers: any[], backgroundColor: string) => {
             if (shape.ty === 'fl' && shape.c) {
               const rgb = hexToRgb(backgroundColor);
               if (rgb) {
+                console.log('Updating shape color from', shape.c.k, 'to', [rgb.r / 255, rgb.g / 255, rgb.b / 255, 1]);
                 shape.c.k = [rgb.r / 255, rgb.g / 255, rgb.b / 255, 1];
               }
             }
@@ -72,6 +79,8 @@ const updateCustomerBgColor = (layers: any[], backgroundColor: string) => {
         }
       }
     }
+    
+    // Recursively search nested layers
     if (layer.layers) {
       updateCustomerBgColor(layer.layers, backgroundColor);
     }
