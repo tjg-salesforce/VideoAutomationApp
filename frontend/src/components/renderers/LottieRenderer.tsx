@@ -40,10 +40,9 @@ const useMemoizedLottieData = (lottieData: any, properties: any) => {
     
     const updatedData = JSON.parse(JSON.stringify(lottieData));
     
-    // Update background color
-    if (properties.backgroundColor) {
-      updateCustomerBgColor(updatedData.layers, properties.backgroundColor);
-    }
+    // Update background color - default to #184cb4 if not specified
+    const bgColor = properties.backgroundColor || '#184cb4';
+    updateCustomerBgColor(updatedData.layers, bgColor);
     
     // Update customer logo
     if (properties.customerLogo && properties.customerLogo.data) {
@@ -260,8 +259,7 @@ export default function LottieRenderer({
       className={`w-full h-full ${mode === 'preview' ? 'rounded-lg' : ''}`}
       style={{ 
         width: '100%', 
-        height: '100%',
-        backgroundColor: properties.backgroundColor === 'transparent' ? 'transparent' : properties.backgroundColor || '#184cb4'
+        height: '100%'
       }}
     />
   );

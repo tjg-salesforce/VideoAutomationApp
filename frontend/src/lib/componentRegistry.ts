@@ -1,3 +1,4 @@
+import React from 'react';
 import { Component } from '@/types';
 
 export type ComponentRendererType = 'lottie' | 'html' | 'canvas' | 'hybrid';
@@ -31,109 +32,6 @@ export const componentRegistry: ComponentRegistry = {
     performance: 'high',
     debounceMs: 100,
     maxInstances: 3,
-    pauseOffscreen: true
-  },
-  'salesforce_logo_reveal': {
-    type: 'lottie',
-    renderer: LottieRenderer,
-    preview: 'canvas',
-    performance: 'high',
-    debounceMs: 100,
-    maxInstances: 2,
-    pauseOffscreen: true
-  },
-  'data_flow_animation': {
-    type: 'lottie',
-    renderer: LottieRenderer,
-    preview: 'canvas',
-    performance: 'high',
-    debounceMs: 150,
-    maxInstances: 2,
-    pauseOffscreen: true
-  },
-  'success_transition': {
-    type: 'lottie',
-    renderer: LottieRenderer,
-    preview: 'canvas',
-    performance: 'high',
-    debounceMs: 100,
-    maxInstances: 5,
-    pauseOffscreen: true
-  },
-
-  // Salesforce UI Components (HTML-based)
-  'lead_form': {
-    type: 'html',
-    renderer: HTMLRenderer,
-    preview: 'dom',
-    performance: 'medium',
-    debounceMs: 50,
-    maxInstances: 10,
-    pauseOffscreen: false
-  },
-  'opportunity_pipeline': {
-    type: 'html',
-    renderer: HTMLRenderer,
-    preview: 'dom',
-    performance: 'medium',
-    debounceMs: 50,
-    maxInstances: 8,
-    pauseOffscreen: false
-  },
-  'dashboard_widget': {
-    type: 'html',
-    renderer: HTMLRenderer,
-    preview: 'dom',
-    performance: 'medium',
-    debounceMs: 50,
-    maxInstances: 15,
-    pauseOffscreen: false
-  },
-  'record_detail': {
-    type: 'html',
-    renderer: HTMLRenderer,
-    preview: 'dom',
-    performance: 'medium',
-    debounceMs: 50,
-    maxInstances: 12,
-    pauseOffscreen: false
-  },
-  'list_view': {
-    type: 'html',
-    renderer: HTMLRenderer,
-    preview: 'dom',
-    performance: 'medium',
-    debounceMs: 50,
-    maxInstances: 10,
-    pauseOffscreen: false
-  },
-  'calendar': {
-    type: 'html',
-    renderer: HTMLRenderer,
-    preview: 'dom',
-    performance: 'medium',
-    debounceMs: 50,
-    maxInstances: 5,
-    pauseOffscreen: false
-  },
-
-  // Hybrid Components (Lottie + HTML)
-  'text_with_motion': {
-    type: 'hybrid',
-    renderer: HybridRenderer,
-    preview: 'canvas',
-    performance: 'medium',
-    debounceMs: 100,
-    maxInstances: 5,
-    pauseOffscreen: true
-  },
-  'ui_with_animation': {
-    type: 'hybrid',
-    renderer: HybridRenderer,
-    preview: 'canvas',
-    performance: 'medium',
-    debounceMs: 100,
-    maxInstances: 4,
     pauseOffscreen: true
   }
 };
