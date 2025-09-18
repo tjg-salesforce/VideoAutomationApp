@@ -31,58 +31,83 @@ export default function LogoSplitCSS({
   // Calculate animation progress based on time
   const progress = Math.min(1, currentTime / duration);
   
-  // Animation phases
-  const inPhase = Math.min(1, progress * 3); // First 1/3 of animation
-  const holdPhase = Math.min(1, Math.max(0, (progress - 0.33) * 3)); // Middle 1/3
-  const outPhase = Math.min(1, Math.max(0, (progress - 0.66) * 3)); // Last 1/3
+  // Customer background animation completes in first 0.7s (14% of 5s timeline) - much slower growth
+  const customerBgPhase = Math.min(1, progress * 3.57);
+  // Customer logo animation - faster growth, original speed
+  const customerLogoPhase = Math.min(1, progress * 7.14);
+  // Salesforce background starts at 0.05s and completes by 0.4s - leads the logo, starts much earlier
+  const salesforceBgPhase = Math.min(1, Math.max(0, (progress - 0.01) * 10));
+  // Salesforce logo starts at 0.3s and completes by 0.65s - follows the background, moved back by 0.05s
+  const salesforceLogoPhase = Math.min(1, Math.max(0, (progress - 0.06) * 8.33));
+  const holdPhase = Math.min(1, Math.max(0, (progress - 0.16) * 2.5)); // Hold from 0.16s to 0.56s
+  const outPhase = Math.min(1, Math.max(0, (progress - 0.56) * 3.125)); // Out phase from 0.56s - 25% faster
+  const customerOutPhase = Math.min(1, Math.max(0, (progress - 0.53) * 3.125)); // Customer logo exit starts at 0.53s - 25% faster
+  const customerBgOutPhase = Math.min(1, Math.max(0, (progress - 0.56) * 3.125)); // Customer background exit starts at 0.56s - 25% faster
 
   // Update element positions based on timeline
   useEffect(() => {
     if (!containerRef.current) return;
 
-    // Customer background circle
+    // Customer background circle - grows slower, similar speed to white circle
     if (customerBgRef.current) {
-      const scale = inPhase;
-      customerBgRef.current.style.transform = `translate(-50%, -50%) scale(${scale})`;
+      const easedScale = customerBgPhase > 0 ? 1 - Math.pow(1 - customerBgPhase, 2) : 0; // Ease-out quadratic
+      customerBgRef.current.style.transform = `translate(-50%, -50%) scale(${easedScale})`;
     }
 
-    // Salesforce background circle
+    // Salesforce background circle - quick fly-in with easing
     if (salesforceBgRef.current) {
-      const translateX = inPhase > 0 ? (1 - inPhase) * 100 : 100; // Slide in from right
-      salesforceBgRef.current.style.transform = `translate(${translateX}vw, -50%)`;
+      const easedPhase = salesforceBgPhase > 0 ? 1 - Math.pow(1 - salesforceBgPhase, 3) : 0; // Ease-out cubic
+      const translateX = (1 - easedPhase) * 100;
+      salesforceBgRef.current.style.transform = `translate(${translateX}%, -50%)`;
     }
 
-    // Customer logo circle
+    // Customer logo circle - grows with easing, similar speed to background
     if (customerLogoRef.current) {
-      const scale = inPhase;
-      customerLogoRef.current.style.transform = `translate(-50%, -50%) scale(${scale})`;
+      const easedScale = customerLogoPhase > 0 ? 1 - Math.pow(1 - customerLogoPhase, 2) : 0; // Ease-out quadratic
+      customerLogoRef.current.style.transform = `translate(-50%, -50%) scale(${easedScale})`;
     }
 
-    // Salesforce logo circle
+    // Salesforce logo circle - starts completely off-screen right, slides in after background
     if (salesforceLogoRef.current) {
-      const scale = inPhase;
-      const translateX = inPhase > 0 ? (1 - inPhase) * 100 : 100; // Slide in from right
-      salesforceLogoRef.current.style.transform = `translate(${translateX}vw, -50%) scale(${scale})`;
+      const easedPhase = salesforceLogoPhase > 0 ? 1 - Math.pow(1 - salesforceLogoPhase, 3) : 0; // Ease-out cubic
+      // Start completely off-screen to the right, slide to center at 75%
+      const translateX = (1 - easedPhase) * 150; // Start further off-screen
+      salesforceLogoRef.current.style.transform = `translate(calc(-50% + ${translateX}%), -50%) scale(1)`; // Keep centered while sliding
     }
 
-    // Handle out phase (slide out)
-    if (outPhase > 0) {
-      const slideOffset = outPhase * 200; // Slide out to the left
+    // Handle customer logo exit phase (starts at 0.5s)
+    if (customerOutPhase > 0) {
+      const customerSlideOffset = customerOutPhase * 1000; // Customer logo 2x faster
       
-      if (customerBgRef.current) {
-        customerBgRef.current.style.transform = `translate(-50%, -50%) translateX(-${slideOffset}vw) scale(1)`;
-      }
-      if (salesforceBgRef.current) {
-        salesforceBgRef.current.style.transform = `translate(0, -50%) translateX(-${slideOffset}vw)`;
-      }
       if (customerLogoRef.current) {
-        customerLogoRef.current.style.transform = `translate(-50%, -50%) translateX(-${slideOffset}vw) scale(1)`;
+        customerLogoRef.current.style.transform = `translate(-50%, -50%) translateX(-${customerSlideOffset}%) scale(1)`;
+      }
+    }
+
+    // Handle customer background slide out (starts same time as blue circle)
+    if (customerBgOutPhase > 0) {
+      if (customerBgRef.current) {
+        // Slide the green circle out to the left
+        const customerBgSlideOffset = customerBgOutPhase * 400; // Same speed as blue circle
+        
+        customerBgRef.current.style.transform = `translate(-50%, -50%) translateX(-${customerBgSlideOffset}%)`;
+        customerBgRef.current.style.borderRadius = '50%'; // Keep it circular
+      }
+    }
+
+    // Handle out phase (slide out) - 2x faster logo speeds
+    if (outPhase > 0) {
+      const salesforceBgSlideOffset = outPhase * 400; // Blue bg 2x faster
+      const salesforceLogoSlideOffset = outPhase * 1200; // Salesforce logo 2x faster
+      
+      if (salesforceBgRef.current) {
+        salesforceBgRef.current.style.transform = `translate(0, -50%) translateX(-${salesforceBgSlideOffset}%)`;
       }
       if (salesforceLogoRef.current) {
-        salesforceLogoRef.current.style.transform = `translate(0, -50%) translateX(-${slideOffset}vw) scale(1)`;
+        salesforceLogoRef.current.style.transform = `translate(-50%, -50%) translateX(-${salesforceLogoSlideOffset}%) scale(1)`;
       }
     }
-  }, [progress, inPhase, outPhase]);
+  }, [progress, customerBgPhase, customerLogoPhase, salesforceBgPhase, salesforceLogoPhase, outPhase, customerOutPhase, customerBgOutPhase]);
 
   // Update CSS custom properties for real-time changes
   useEffect(() => {
@@ -96,9 +121,6 @@ export default function LogoSplitCSS({
     <div 
       ref={containerRef}
       className="logo-split-canvas"
-      style={{
-        transform: `scale(${logoScale})`
-      }}
     >
       {/* Customer side background */}
       <div ref={customerBgRef} className="customer-bg-stinger"></div>
@@ -110,8 +132,11 @@ export default function LogoSplitCSS({
       <div ref={customerLogoRef} className="logo-circle customer-logo-circle">
         <img 
           className="logo-image" 
-          src="https://placehold.co/400x400/ffffff/000000?text=Customer+Logo" 
+          src={customerLogo} 
           alt="Customer Logo"
+          style={{
+            transform: `scale(${logoScale})`
+          }}
         />
       </div>
       

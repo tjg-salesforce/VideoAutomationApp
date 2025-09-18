@@ -4,9 +4,9 @@
 /* Variables for easy customization based on 1920x1080px canvas */
 :root {
   --customer-bg-color: #fca5a5; /* Red-500 */
-  --salesforce-bg-color: #3b82f6; /* Blue-500 */
+  --salesforce-bg-color: rgb(0, 162, 225); /* Salesforce blue */
   --white-circle-color: white;
-  --circle-diameter: calc(400 / 1920 * 100vw); /* 400px diameter */
+  --circle-diameter: 15vw; /* Smaller circles - adjust as needed */
   --animation-duration-in: 1s;
   --animation-delay-in-bg: 0.2s;
   --animation-delay-in-logo: 0.4s;
@@ -17,7 +17,9 @@
   --animation-delay-out-salesforce-logo: calc(var(--hold-duration) + var(--animation-duration-in) + 0.9s);
   
   /* Final positions based on your spacing logic */
+  /* 280px space + 200px (half circle) = 480px = 25% of 1920px */
   --customer-logo-left: 25%;
+  /* 280px space + 400px circle + 280px space + 200px (half circle) = 75% of 1920px */
   --salesforce-logo-left: 75%;
   --logo-scale: 1;
 }
@@ -50,11 +52,11 @@
   position: absolute;
   top: 50%;
   left: 50%; /* Aligns the left edge with the center of the canvas */
-  width: calc(2000 / 1920 * 100vw);
-  height: calc(2000 / 1920 * 100vw);
+  width: 100vw; /* 1/2 smaller (200vw * 0.5) */
+  height: 100vw; /* 1/2 smaller (200vw * 0.5) */
   background-color: var(--salesforce-bg-color);
   border-radius: 50%;
-  transform: translate(100vw, -50%); /* Starts off-screen to the right */
+  transform: translate(100%, -50%); /* Starts off-screen to the right */
   /* Remove CSS animations - we'll control this with JavaScript */
   z-index: 3;
 }
@@ -73,6 +75,8 @@
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1), 0 2px 4px rgba(0, 0, 0, 0.06);
   transform: translateY(-50%);
   z-index: 10;
+  /* Force height to match width - use the same percentage for both */
+  height: var(--circle-diameter);
 }
 
 /* Logo images inside the circles */
@@ -90,7 +94,7 @@
 
 .salesforce-logo-circle {
   left: var(--salesforce-logo-left);
-  transform: translate(100vw, -50%) scale(0);
+  transform: translate(-50%, -50%) scale(0);
   /* Remove CSS animations - we'll control this with JavaScript */
   z-index: 11;
 }

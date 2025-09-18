@@ -18,8 +18,9 @@ export default function ProjectEditor() {
   const [timeline, setTimeline] = useState<TimelineItem[]>([]);
   const [selectedTimelineItem, setSelectedTimelineItem] = useState<TimelineItem | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
+  const [currentTime, setCurrentTime] = useState(1); // Start at 1s to show logos/colors
   const [totalDuration, setTotalDuration] = useState(0);
+  const [hasPlayedBefore, setHasPlayedBefore] = useState(false);
   const [playbackInterval, setPlaybackInterval] = useState<NodeJS.Timeout | null>(null);
   const [loading, setLoading] = useState(false);
   const [draggedComponent, setDraggedComponent] = useState<Component | null>(null);
@@ -140,6 +141,11 @@ export default function ProjectEditor() {
     const newTimeline = [...timeline, newItem].sort((a, b) => a.start_time - b.start_time);
     setTimeline(newTimeline);
     calculateTotalDuration(newTimeline);
+    
+    // Auto-select the new component and show properties
+    setSelectedTimelineItem(newItem);
+    setShowComponentLibrary(false);
+    
     setDraggedComponent(null);
   };
 
@@ -672,19 +678,31 @@ export default function ProjectEditor() {
   const renderLogoSplitFrame = (ctx: CanvasRenderingContext2D, frame: number, totalFrames: number, properties: any) => {
     const progress = frame / totalFrames;
     const backgroundColor = properties.backgroundColor || '#fca5a5';
-    const salesforceColor = '#3b82f6';
+    const salesforceColor = 'rgb(0, 162, 225)'; // Salesforce blue
     
-    // Calculate animation phases
-    const inPhase = Math.min(1, progress * 3); // First 1/3 of animation
-    const holdPhase = Math.min(1, Math.max(0, (progress - 0.33) * 3)); // Middle 1/3
-    const outPhase = Math.min(1, Math.max(0, (progress - 0.66) * 3)); // Last 1/3
+    // Debug canvas dimensions
+    if (frame === 0) {
+      console.log('Video canvas dimensions:', ctx.canvas.width, 'x', ctx.canvas.height);
+      console.log('Customer logo should be at:', ctx.canvas.width * 0.25, 'px from left');
+      console.log('Salesforce logo should be at:', ctx.canvas.width * 0.75, 'px from left');
+    }
     
-    // Draw customer background circle
-    if (inPhase > 0) {
-      const customerScale = inPhase;
+    // Calculate animation phases - matching preview timing
+    const customerBgPhase = Math.min(1, progress * 3.57); // Customer background completes in first 0.7s (14% of timeline) - much slower growth
+    const customerLogoPhase = Math.min(1, progress * 7.14); // Customer logo - faster growth, original speed
+    const salesforceBgPhase = Math.min(1, Math.max(0, (progress - 0.01) * 10)); // Salesforce background starts at 0.05s - leads the logo, starts much earlier
+    const salesforceLogoPhase = Math.min(1, Math.max(0, (progress - 0.06) * 8.33)); // Salesforce logo starts at 0.3s - follows the background, moved back by 0.05s
+  const holdPhase = Math.min(1, Math.max(0, (progress - 0.16) * 2.5)); // Hold from 0.16s to 0.56s
+  const outPhase = Math.min(1, Math.max(0, (progress - 0.56) * 2.5)); // Out phase from 0.56s
+  const customerOutPhase = Math.min(1, Math.max(0, (progress - 0.5) * 2.5)); // Customer logo exit starts at 0.5s
+  const customerBgOutPhase = Math.min(1, Math.max(0, (progress - 1.0) * 2.5)); // Customer background exit starts at 1.0s (0.5s later)
+    
+    // Draw customer background circle - grows slower, similar speed to white circle
+    if (customerBgPhase > 0) {
+      const easedScale = 1 - Math.pow(1 - customerBgPhase, 2); // Ease-out quadratic
       const customerX = ctx.canvas.width * 0.25; // 25% from left
       const customerY = ctx.canvas.height * 0.5;
-      const customerRadius = Math.min(ctx.canvas.width, ctx.canvas.height) * 0.4 * customerScale;
+      const customerRadius = Math.min(ctx.canvas.width, ctx.canvas.height) * 0.4 * easedScale;
       
       ctx.fillStyle = backgroundColor;
       ctx.beginPath();
@@ -692,11 +710,12 @@ export default function ProjectEditor() {
       ctx.fill();
     }
     
-    // Draw Salesforce background circle
-    if (inPhase > 0) {
+    // Draw Salesforce background circle - quick fly-in with easing, smaller from start
+    if (salesforceBgPhase > 0) {
+      const easedPhase = 1 - Math.pow(1 - salesforceBgPhase, 3); // Ease-out cubic
       const salesforceX = ctx.canvas.width * 0.75; // 75% from left
       const salesforceY = ctx.canvas.height * 0.5;
-      const salesforceRadius = Math.min(ctx.canvas.width, ctx.canvas.height) * 0.4;
+      const salesforceRadius = Math.min(ctx.canvas.width, ctx.canvas.height) * 0.4 * 0.5; // 1/2 smaller from start
       
       ctx.fillStyle = salesforceColor;
       ctx.beginPath();
@@ -704,12 +723,13 @@ export default function ProjectEditor() {
       ctx.fill();
     }
     
-    // Draw customer logo circle
-    if (inPhase > 0) {
-      const logoScale = inPhase;
+    // Draw customer logo circle - grows with easing, similar speed to background
+    if (customerLogoPhase > 0) {
+      const easedScale = 1 - Math.pow(1 - customerLogoPhase, 2); // Ease-out quadratic
       const logoX = ctx.canvas.width * 0.25;
       const logoY = ctx.canvas.height * 0.5;
-      const logoRadius = 200 * logoScale;
+      // Use width-based radius for proper horizontal spacing, height will match (smaller circles)
+      const logoRadius = ctx.canvas.width * 0.078125 * easedScale; // 15vw equivalent
       
       // White circle
       ctx.fillStyle = 'white';
@@ -735,12 +755,13 @@ export default function ProjectEditor() {
       ctx.fillText('Logo', logoX, logoY + 20);
     }
     
-    // Draw Salesforce logo circle
-    if (inPhase > 0) {
-      const logoScale = inPhase;
-      const logoX = ctx.canvas.width * 0.75;
+    // Draw Salesforce logo circle - follows background, starts full size, lands at 75%
+    if (salesforceLogoPhase > 0) {
+      const easedPhase = 1 - Math.pow(1 - salesforceLogoPhase, 3); // Ease-out cubic
+      const logoX = ctx.canvas.width * 0.75; // 75% from left
       const logoY = ctx.canvas.height * 0.5;
-      const logoRadius = 200 * logoScale;
+      // Use width-based radius for proper horizontal spacing, height will match (smaller circles)
+      const logoRadius = ctx.canvas.width * 0.078125; // Always full size
       
       // White circle
       ctx.fillStyle = 'white';
@@ -766,63 +787,80 @@ export default function ProjectEditor() {
       ctx.fillText('Logo', logoX, logoY + 20);
     }
     
-    // Handle out phase (slide out)
-    if (outPhase > 0) {
-      // Apply slide out transform
-      const slideOffset = outPhase * ctx.canvas.width;
+    // Handle customer logo exit phase (starts at 0.5s)
+    if (customerOutPhase > 0) {
+      const customerSlideOffset = customerOutPhase * ctx.canvas.width * 5; // Customer logo 2x faster
       
-      // Redraw everything with slide offset
+      // Redraw customer logo only
       ctx.save();
-      ctx.translate(-slideOffset, 0);
+      ctx.translate(-customerSlideOffset, 0);
       
-      // Redraw customer side
+      const customerX = ctx.canvas.width * 0.25;
+      const customerY = ctx.canvas.height * 0.5;
+      const logoRadius = ctx.canvas.width * 0.078125;
+      
+      ctx.fillStyle = 'white';
+      ctx.beginPath();
+      ctx.arc(customerX, customerY, logoRadius, 0, 2 * Math.PI);
+      ctx.fill();
+      
+      ctx.restore();
+    }
+
+    // Handle customer background stinger effect (starts 0.5s later at 1.0s)
+    if (customerBgOutPhase > 0) {
       const customerX = ctx.canvas.width * 0.25;
       const customerY = ctx.canvas.height * 0.5;
       const customerRadius = Math.min(ctx.canvas.width, ctx.canvas.height) * 0.4;
       
-      ctx.fillStyle = backgroundColor;
-      ctx.beginPath();
-      ctx.arc(customerX, customerY, customerRadius, 0, 2 * Math.PI);
-      ctx.fill();
+      // Transform circle into rectangle that extends to right edge
+      const stingerScale = 1 + (customerBgOutPhase * 2); // Grows horizontally to 3x width
+      const customerBgSlideOffset = customerBgOutPhase * ctx.canvas.width * 2; // Slower slide for stinger effect
       
-      // Redraw Salesforce side
+      ctx.save();
+      ctx.translate(-customerBgSlideOffset, 0);
+      
+      // Draw stinger rectangle instead of circle
+      const stingerWidth = customerRadius * 2 * stingerScale;
+      const stingerHeight = customerRadius * 2;
+      const stingerX = customerX - customerRadius; // Start from left edge of original circle
+      
+      ctx.fillStyle = backgroundColor;
+      ctx.fillRect(stingerX, customerY - customerRadius, stingerWidth, stingerHeight);
+      
+      ctx.restore();
+    }
+
+    // Handle out phase (slide out) - faster exit speeds
+    if (outPhase > 0) {
+      // Apply different slide out speeds for different elements
+      const salesforceBgSlideOffset = outPhase * ctx.canvas.width * 2; // Blue bg 2x faster
+      const salesforceLogoSlideOffset = outPhase * ctx.canvas.width * 6; // Salesforce logo 2x faster
+      
+      // Redraw Salesforce side with different slide speed
+      ctx.save();
+      ctx.translate(-salesforceBgSlideOffset, 0);
+      
       const salesforceX = ctx.canvas.width * 0.75;
       const salesforceY = ctx.canvas.height * 0.5;
-      const salesforceRadius = Math.min(ctx.canvas.width, ctx.canvas.height) * 0.4;
+      const salesforceRadius = Math.min(ctx.canvas.width, ctx.canvas.height) * 0.4 * 0.5; // 1/2 smaller
       
       ctx.fillStyle = salesforceColor;
       ctx.beginPath();
       ctx.arc(salesforceX, salesforceY, salesforceRadius, 0, 2 * Math.PI);
       ctx.fill();
       
-      // Redraw logos
-      const logoRadius = 200;
+      ctx.restore();
       
-      // Customer logo
-      ctx.fillStyle = 'white';
-      ctx.beginPath();
-      ctx.arc(customerX, customerY, logoRadius, 0, 2 * Math.PI);
-      ctx.fill();
+      // Redraw Salesforce logo with barely trailing speed
+      ctx.save();
+      ctx.translate(-salesforceLogoSlideOffset, 0);
       
-      ctx.fillStyle = '#333';
-      ctx.font = 'bold 48px Inter, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText('Customer', customerX, customerY - 20);
-      ctx.fillText('Logo', customerX, customerY + 20);
-      
-      // Salesforce logo
+      const logoRadius = ctx.canvas.width * 0.078125;
       ctx.fillStyle = 'white';
       ctx.beginPath();
       ctx.arc(salesforceX, salesforceY, logoRadius, 0, 2 * Math.PI);
       ctx.fill();
-      
-      ctx.fillStyle = '#333';
-      ctx.font = 'bold 48px Inter, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText('Salesforce', salesforceX, salesforceY - 20);
-      ctx.fillText('Logo', salesforceX, salesforceY + 20);
       
       ctx.restore();
     }
@@ -842,8 +880,13 @@ export default function ProjectEditor() {
       }
       setIsPlaying(false);
     } else {
+      // If this is the first time playing, start from the beginning
+      if (!hasPlayedBefore) {
+        setCurrentTime(0);
+        setHasPlayedBefore(true);
+      }
       // If we're at the end, reset to beginning
-      if (currentTime >= totalDuration) {
+      else if (currentTime >= totalDuration) {
         setCurrentTime(0);
       }
       

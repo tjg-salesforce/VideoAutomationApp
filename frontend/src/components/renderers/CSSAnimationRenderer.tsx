@@ -28,7 +28,7 @@ export default function CSSAnimationRenderer({
           duration={5} // 5 seconds
           isPlaying={isPlaying}
           backgroundColor={properties.backgroundColor || '#fca5a5'}
-          customerLogo={properties.customerLogo || 'Customer Logo'}
+          customerLogo={properties.customerLogo?.data || 'Customer Logo'}
           logoScale={properties.logoScale || 1}
           mode={mode}
           onPropertyChange={onPropertyChange}
