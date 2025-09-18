@@ -26,6 +26,8 @@ export default function ProjectEditor() {
   const [draggedComponent, setDraggedComponent] = useState<Component | null>(null);
   const [draggedMediaAsset, setDraggedMediaAsset] = useState<any>(null);
   const [draggedLayer, setDraggedLayer] = useState<any>(null);
+  const [draggedTimelineItem, setDraggedTimelineItem] = useState<any>(null);
+  const [draggedMediaItem, setDraggedMediaItem] = useState<any>(null);
   const [showComponentLibrary, setShowComponentLibrary] = useState(true);
   const [showMediaLibrary, setShowMediaLibrary] = useState(false);
   const [isRendering, setIsRendering] = useState(false);
@@ -98,6 +100,14 @@ export default function ProjectEditor() {
         });
         setComponentProperties(properties);
       }
+
+      // Restore media assets and timeline layers if they exist
+      if (projectData.mediaAssets) {
+        setMediaAssets(projectData.mediaAssets);
+      }
+      if (projectData.timelineLayers) {
+        setTimelineLayers(projectData.timelineLayers);
+      }
     } catch (error) {
       console.error('Error loading project:', error);
     }
@@ -141,6 +151,22 @@ export default function ProjectEditor() {
     e.dataTransfer.effectAllowed = 'move';
   };
 
+  const handleTimelineItemDragStart = (e: React.DragEvent, item: any) => {
+    setDraggedTimelineItem(item);
+    setDraggedComponent(null);
+    setDraggedMediaAsset(null);
+    setDraggedLayer(null);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleMediaItemDragStart = (e: React.DragEvent, item: any, layerId: string) => {
+    setDraggedMediaItem({ ...item, layerId });
+    setDraggedComponent(null);
+    setDraggedMediaAsset(null);
+    setDraggedLayer(null);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
@@ -151,19 +177,45 @@ export default function ProjectEditor() {
     if (!files) return;
 
     Array.from(files).forEach(file => {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const newAsset = {
-          id: `media_${Date.now()}_${Math.random()}`,
-          name: file.name,
-          type: file.type.startsWith('video/') ? 'video' : 'image',
-          data: event.target?.result as string,
-          duration: file.type.startsWith('video/') ? 5 : 3, // Default durations
-          file: file
+      if (file.type.startsWith('video/')) {
+        // For videos, we need to get the actual duration
+        const video = document.createElement('video');
+        video.preload = 'metadata';
+        
+        video.onloadedmetadata = () => {
+          const duration = video.duration;
+          const reader = new FileReader();
+          reader.onload = (event) => {
+            const newAsset = {
+              id: `media_${Date.now()}_${Math.random()}`,
+              name: file.name,
+              type: 'video',
+              data: event.target?.result as string,
+              duration: duration,
+              file: file
+            };
+            setMediaAssets(prev => [...prev, newAsset]);
+          };
+          reader.readAsDataURL(file);
         };
-        setMediaAssets(prev => [...prev, newAsset]);
-      };
-      reader.readAsDataURL(file);
+        
+        video.src = URL.createObjectURL(file);
+      } else {
+        // For images, use default duration
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          const newAsset = {
+            id: `media_${Date.now()}_${Math.random()}`,
+            name: file.name,
+            type: 'image',
+            data: event.target?.result as string,
+            duration: 3, // Default duration for images
+            file: file
+          };
+          setMediaAssets(prev => [...prev, newAsset]);
+        };
+        reader.readAsDataURL(file);
+      }
     });
     
     // Reset the input
@@ -270,6 +322,47 @@ export default function ProjectEditor() {
       }
       
       setDraggedLayer(null);
+    } else if (draggedTimelineItem) {
+      // Handle timeline item repositioning
+      const timelineRect = e.currentTarget.getBoundingClientRect();
+      const x = e.clientX - timelineRect.left;
+      const timelineWidth = timelineRect.width;
+      const newStartTime = (x / timelineWidth) * totalDuration;
+      
+      // Ensure the item doesn't go negative or extend beyond total duration
+      const clampedStartTime = Math.max(0, Math.min(newStartTime, totalDuration - draggedTimelineItem.duration));
+      
+      setTimeline(prev => prev.map(item => 
+        item.id === draggedTimelineItem.id 
+          ? { ...item, start_time: clampedStartTime }
+          : item
+      ));
+      
+      setDraggedTimelineItem(null);
+    } else if (draggedMediaItem) {
+      // Handle media item repositioning
+      const timelineRect = e.currentTarget.getBoundingClientRect();
+      const x = e.clientX - timelineRect.left;
+      const timelineWidth = timelineRect.width;
+      const newStartTime = (x / timelineWidth) * totalDuration;
+      
+      // Ensure the item doesn't go negative or extend beyond total duration
+      const clampedStartTime = Math.max(0, Math.min(newStartTime, totalDuration - draggedMediaItem.duration));
+      
+      setTimelineLayers(prev => prev.map(layer => 
+        layer.id === draggedMediaItem.layerId
+          ? {
+              ...layer,
+              items: layer.items.map(item =>
+                item.id === draggedMediaItem.id
+                  ? { ...item, start_time: clampedStartTime }
+                  : item
+              )
+            }
+          : layer
+      ));
+      
+      setDraggedMediaItem(null);
     }
   };
 
@@ -310,6 +403,8 @@ export default function ProjectEditor() {
         name: project.name,
         description: project.description,
         timeline: timelineWithProperties,
+        mediaAssets,
+        timelineLayers,
         status: 'in_progress'
       };
       
@@ -330,6 +425,23 @@ export default function ProjectEditor() {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const generateTimeMarkers = () => {
+    const markers = [];
+    const interval = totalDuration > 60 ? 10 : 5; // 10s intervals for long videos, 5s for short
+    
+    for (let i = 0; i <= totalDuration; i += interval) {
+      const isMinute = i % 60 === 0 && i > 0;
+      markers.push({
+        time: i,
+        position: (i / totalDuration) * 100,
+        isMinute,
+        label: isMinute ? `${Math.floor(i / 60)}m` : `${i}s`
+      });
+    }
+    
+    return markers;
   };
 
   // Function to create and configure a Lottie instance for video rendering
@@ -1257,6 +1369,22 @@ export default function ProjectEditor() {
               />
             </div>
 
+            {/* Time Markers */}
+            <div className="relative h-8 mb-2 border-b border-gray-200">
+              {generateTimeMarkers().map((marker) => (
+                <div
+                  key={marker.time}
+                  className="absolute top-0 h-full flex flex-col items-center"
+                  style={{ left: `${marker.position}%` }}
+                >
+                  <div className={`w-px h-4 ${marker.isMinute ? 'bg-gray-600' : 'bg-gray-300'}`}></div>
+                  <div className={`text-xs mt-1 ${marker.isMinute ? 'text-gray-700 font-medium' : 'text-gray-500'}`}>
+                    {marker.label}
+                  </div>
+                </div>
+              ))}
+            </div>
+
             {/* Timeline Tracks */}
             <div 
               ref={timelineRef}
@@ -1270,21 +1398,24 @@ export default function ProjectEditor() {
                   <h4 className="text-sm font-medium text-gray-700">Components</h4>
                   <div className="ml-2 w-3 h-3 bg-blue-500 rounded"></div>
                 </div>
-                <div className="h-16 flex space-x-2">
+                <div className="relative h-16">
                   {timeline.map((item) => (
                     <div
                       key={item.id}
+                      draggable
+                      onDragStart={(e) => handleTimelineItemDragStart(e, item)}
                       onClick={() => {
                         setSelectedTimelineItem(item);
                         setShowComponentLibrary(false);
                         setShowMediaLibrary(false);
                       }}
-                      className={`min-w-32 h-full rounded-lg p-3 cursor-pointer transition-colors ${
+                      className={`absolute top-0 h-full rounded-lg p-3 cursor-move transition-colors ${
                         selectedTimelineItem?.id === item.id
                           ? 'bg-blue-500 text-white'
                           : 'bg-blue-100 text-blue-900 hover:bg-blue-200'
                       }`}
                       style={{
+                        left: `${(item.start_time / totalDuration) * 100}%`,
                         width: `${(item.duration / totalDuration) * 100}%`,
                         minWidth: '120px'
                       }}
@@ -1327,12 +1458,15 @@ export default function ProjectEditor() {
                       </svg>
                     </button>
                   </div>
-                  <div className="h-16 flex space-x-2">
+                  <div className="relative h-16">
                     {layer.items.map((item: any) => (
                       <div
                         key={item.id}
-                        className="min-w-32 h-full rounded-lg p-3 cursor-pointer transition-colors bg-green-100 text-green-900 hover:bg-green-200"
+                        draggable
+                        onDragStart={(e) => handleMediaItemDragStart(e, item, layer.id)}
+                        className="absolute top-0 h-full rounded-lg p-3 cursor-move transition-colors bg-green-100 text-green-900 hover:bg-green-200"
                         style={{
+                          left: `${(item.start_time / totalDuration) * 100}%`,
                           width: `${(item.duration / totalDuration) * 100}%`,
                           minWidth: '120px'
                         }}
@@ -1488,7 +1622,7 @@ export default function ProjectEditor() {
                         )}
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium text-gray-900 truncate">{asset.name}</p>
-                          <p className="text-xs text-gray-500">{asset.type} • {asset.duration}s</p>
+                          <p className="text-xs text-gray-500">{asset.type} • {formatTime(asset.duration)}</p>
                         </div>
                       </div>
                     </div>
