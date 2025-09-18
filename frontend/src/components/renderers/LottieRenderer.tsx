@@ -197,7 +197,7 @@ export default function LottieRenderer({
     loadLottieData();
   }, []);
 
-  // Initialize and update Lottie instance
+  // Initialize Lottie instance once
   useEffect(() => {
     if (!lottieData || !containerRef.current) return;
 
@@ -206,25 +206,13 @@ export default function LottieRenderer({
       lottieInstanceRef.current.destroy();
     }
 
-    // Create updated data
-    const updatedData = JSON.parse(JSON.stringify(lottieData));
-    
-    // Update background color
-    const bgColor = properties.backgroundColor || '#184cb4';
-    updateCustomerBgColor(updatedData.layers, bgColor);
-    
-    // Update customer logo
-    if (properties.customerLogo && properties.customerLogo.data) {
-      updateCustomerLogo(updatedData.layers, properties.customerLogo, properties.logoScale, updatedData.assets);
-    }
-
-    // Create new instance
+    // Create initial instance
     lottieInstanceRef.current = lottie.loadAnimation({
       container: containerRef.current,
       renderer: 'canvas',
       loop: false,
       autoplay: false,
-      animationData: updatedData,
+      animationData: lottieData,
       rendererSettings: {
         preserveAspectRatio: 'xMidYMid meet',
         clearCanvas: true,
@@ -241,6 +229,60 @@ export default function LottieRenderer({
         lottieInstanceRef.current = null;
       }
     };
+  }, [lottieData]);
+
+  // Update properties while preserving frame position and playing state
+  useEffect(() => {
+    if (!lottieInstanceRef.current || !lottieData) return;
+
+    // Skip if this is the initial load (no properties changed yet)
+    if (!properties.backgroundColor && !properties.customerLogo && !properties.logoScale) {
+      return;
+    }
+
+    console.log('Updating Lottie properties while preserving state...');
+
+    // Store current state before updating
+    const currentFrame = lottieInstanceRef.current.currentFrame || 0;
+    const wasPlaying = !lottieInstanceRef.current.isPaused;
+
+    // Create updated data
+    const updatedData = JSON.parse(JSON.stringify(lottieData));
+    
+    // Update background color
+    const bgColor = properties.backgroundColor || '#184cb4';
+    updateCustomerBgColor(updatedData.layers, bgColor);
+    
+    // Update customer logo
+    if (properties.customerLogo && properties.customerLogo.data) {
+      updateCustomerLogo(updatedData.layers, properties.customerLogo, properties.logoScale, updatedData.assets);
+    }
+
+    // Destroy and recreate instance with updated data
+    lottieInstanceRef.current.destroy();
+    
+    lottieInstanceRef.current = lottie.loadAnimation({
+      container: containerRef.current,
+      renderer: 'canvas',
+      loop: false,
+      autoplay: false,
+      animationData: updatedData,
+      rendererSettings: {
+        preserveAspectRatio: 'xMidYMid meet',
+        clearCanvas: true,
+        hideOnTransparent: false
+      }
+    });
+
+    // Restore frame position
+    lottieInstanceRef.current.goToAndStop(currentFrame, true);
+    
+    // Restore playing state
+    if (wasPlaying) {
+      lottieInstanceRef.current.play();
+    }
+
+    console.log('Lottie instance updated successfully, restored to frame:', currentFrame, 'playing:', wasPlaying);
   }, [lottieData, properties.backgroundColor, properties.customerLogo, properties.logoScale]);
 
   // Handle playback
