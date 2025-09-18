@@ -251,113 +251,116 @@ export default function ProjectEditor() {
       mediaRecorder.start();
       console.log('MediaRecorder started');
 
-      // Render timeline components frame by frame
-      const fps = 30;
-      const frameDuration = 1000 / fps; // ms per frame
-      let currentFrame = 0;
-      const totalFrames = Math.ceil(totalDuration * fps);
-
-      const renderFrame = () => {
-        if (currentFrame >= totalFrames) {
-          mediaRecorder.stop();
-          return;
+      // Pre-load all images for synchronous rendering
+      const imagePromises: Promise<HTMLImageElement>[] = [];
+      const loadedImages: { [key: string]: HTMLImageElement } = {};
+      
+      timeline.forEach(item => {
+        const properties = componentProperties[item.component.id] || {};
+        if (properties.customerLogo && properties.customerLogo.data) {
+          const img = new Image();
+          const promise = new Promise<HTMLImageElement>((resolve) => {
+            img.onload = () => resolve(img);
+            img.src = properties.customerLogo.data;
+          });
+          imagePromises.push(promise);
+          loadedImages[item.component.id] = img;
         }
+      });
 
-        const currentTime = (currentFrame / fps);
-        const currentItem = timeline.find(item => 
-          currentTime >= item.start_time && currentTime < item.start_time + item.duration
-        );
+      // Wait for all images to load before starting video rendering
+      Promise.all(imagePromises).then(() => {
+        // Render timeline components frame by frame
+        const fps = 30;
+        const frameDuration = 1000 / fps; // ms per frame
+        let currentFrame = 0;
+        const totalFrames = Math.ceil(totalDuration * fps);
 
-        // Clear canvas
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        const renderFrame = () => {
+          if (currentFrame >= totalFrames) {
+            mediaRecorder.stop();
+            return;
+          }
 
-        if (currentItem) {
-          // Render the current component
-          const component = currentItem.component;
-          const properties = componentProperties[component.id] || {};
-          
-          // Set background color
-          ctx.fillStyle = properties.backgroundColor || '#184cb4';
+          const currentTime = (currentFrame / fps);
+          const currentItem = timeline.find(item => 
+            currentTime >= item.start_time && currentTime < item.start_time + item.duration
+          );
+
+          // Clear canvas
+          ctx.fillStyle = '#ffffff';
           ctx.fillRect(0, 0, canvas.width, canvas.height);
-          
-          // For Lottie components, we need to render the actual animation
-          if (component.type === 'customer_logo_split') {
-            // Create a temporary canvas for Lottie rendering
-            const lottieCanvas = document.createElement('canvas');
-            lottieCanvas.width = canvas.width;
-            lottieCanvas.height = canvas.height;
-            const lottieCtx = lottieCanvas.getContext('2d');
+
+          if (currentItem) {
+            // Render the current component
+            const component = currentItem.component;
+            const properties = componentProperties[component.id] || {};
             
-            if (lottieCtx) {
-              // Set background color from properties
-              const bgColor = properties.backgroundColor || '#184cb4';
-              lottieCtx.fillStyle = bgColor;
-              lottieCtx.fillRect(0, 0, lottieCanvas.width, lottieCanvas.height);
-              
+            // Set background color
+            ctx.fillStyle = properties.backgroundColor || '#184cb4';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // For Lottie components, we need to render the actual animation
+            if (component.type === 'customer_logo_split') {
               // Calculate animation progress
               const progress = Math.min(1, (currentTime - currentItem.start_time) / currentItem.duration);
-              const centerX = lottieCanvas.width / 2;
-              const centerY = lottieCanvas.height / 2;
+              const centerX = canvas.width / 2;
+              const centerY = canvas.height / 2;
               
               // Draw the white circle (customer logo background)
-              lottieCtx.fillStyle = '#ffffff';
-              lottieCtx.beginPath();
-              lottieCtx.arc(centerX, centerY, 150, 0, 2 * Math.PI);
-              lottieCtx.fill();
+              ctx.fillStyle = '#ffffff';
+              ctx.beginPath();
+              ctx.arc(centerX, centerY, 200, 0, 2 * Math.PI);
+              ctx.fill();
               
-              // Draw the customer logo (simplified)
-              if (properties.customerLogo && properties.customerLogo.data) {
-                // If there's a custom logo, draw a placeholder for it
-                lottieCtx.fillStyle = '#184cb4';
-                lottieCtx.font = 'bold 32px Arial';
-                lottieCtx.textAlign = 'center';
-                lottieCtx.fillText('CUSTOM', centerX, centerY - 10);
-                lottieCtx.fillText('LOGO', centerX, centerY + 25);
+              // Draw the customer logo
+              if (properties.customerLogo && properties.customerLogo.data && loadedImages[component.id]) {
+                // Draw the pre-loaded custom logo
+                const logoSize = 100 * (properties.logoScale || 1);
+                const logoX = centerX - logoSize / 2;
+                const logoY = centerY - logoSize / 2;
+                ctx.drawImage(loadedImages[component.id], logoX, logoY, logoSize, logoSize);
               } else {
                 // Default Salesforce logo placeholder
-                lottieCtx.fillStyle = '#184cb4';
-                lottieCtx.font = 'bold 28px Arial';
-                lottieCtx.textAlign = 'center';
-                lottieCtx.fillText('SALESFORCE', centerX, centerY - 5);
-                lottieCtx.font = 'bold 20px Arial';
-                lottieCtx.fillText('LOGO', centerX, centerY + 20);
+                ctx.fillStyle = '#184cb4';
+                ctx.font = 'bold 32px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('SALESFORCE', centerX, centerY - 10);
+                ctx.font = 'bold 24px Arial';
+                ctx.fillText('LOGO', centerX, centerY + 25);
               }
               
               // Draw the split animation effect
               // This creates a wipe effect from left to right
-              const splitProgress = Math.min(1, progress * 2); // Speed up the split
+              const splitProgress = Math.min(1, progress * 1.5); // Speed up the split
               if (splitProgress > 0) {
-                lottieCtx.fillStyle = bgColor;
-                const splitWidth = splitProgress * lottieCanvas.width;
-                lottieCtx.fillRect(0, 0, splitWidth, lottieCanvas.height);
+                ctx.fillStyle = properties.backgroundColor || '#184cb4';
+                const splitWidth = splitProgress * canvas.width;
+                ctx.fillRect(0, 0, splitWidth, canvas.height);
               }
               
               // Add some visual polish
-              lottieCtx.strokeStyle = '#cccccc';
-              lottieCtx.lineWidth = 2;
-              lottieCtx.beginPath();
-              lottieCtx.arc(centerX, centerY, 150, 0, 2 * Math.PI);
-              lottieCtx.stroke();
+              ctx.strokeStyle = '#cccccc';
+              ctx.lineWidth = 3;
+              ctx.beginPath();
+              ctx.arc(centerX, centerY, 200, 0, 2 * Math.PI);
+              ctx.stroke();
+            } else {
+              // For other component types, render a placeholder
+              ctx.fillStyle = '#ffffff';
+              ctx.font = '48px Arial';
+              ctx.textAlign = 'center';
+              ctx.fillText(component.name, canvas.width / 2, canvas.height / 2);
             }
-            
-            // Copy the Lottie canvas to the main canvas
-            ctx.drawImage(lottieCanvas, 0, 0);
-          } else {
-            // For other component types, render a placeholder
-            ctx.fillStyle = '#ffffff';
-            ctx.font = '48px Arial';
-            ctx.textAlign = 'center';
-            ctx.fillText(component.name, canvas.width / 2, canvas.height / 2);
           }
-        }
 
-        currentFrame++;
-        setTimeout(renderFrame, frameDuration);
-      };
+          currentFrame++;
+          setTimeout(renderFrame, frameDuration);
+        };
 
-      // Start rendering
-      renderFrame();
+        // Start rendering
+        renderFrame();
+      });
 
     } catch (error) {
       console.error('Error rendering video:', error);
