@@ -1,12 +1,87 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { PlayIcon, PauseIcon, TrashIcon, ArrowLeftIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
 import { Project, Component, TimelineItem } from '@/types';
 import { apiEndpoints } from '@/lib/api';
 import ComponentRenderer from '@/components/ComponentRenderer';
 import lottie from 'lottie-web';
+
+// Video component that responds to timeline controls
+function VideoTimelineControl({ 
+  src, 
+  startTime, 
+  duration, 
+  currentTime, 
+  isPlaying, 
+  className 
+}: {
+  src: string;
+  startTime: number;
+  duration: number;
+  currentTime: number;
+  isPlaying: boolean;
+  className: string;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  // Function to update video time
+  const updateVideoTime = useCallback(() => {
+    const video = videoRef.current;
+    if (!video || video.readyState < 2) return;
+
+    const videoEndTime = startTime + duration;
+    
+    if (currentTime >= startTime && currentTime <= videoEndTime) {
+      const videoProgress = (currentTime - startTime) / duration;
+      const targetTime = videoProgress * video.duration;
+      
+      if (isFinite(targetTime) && targetTime >= 0 && targetTime <= video.duration) {
+        video.currentTime = targetTime;
+      }
+    }
+  }, [currentTime, startTime, duration]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    // Control video playback based on timeline
+    if (isPlaying) {
+      video.play();
+    } else {
+      video.pause();
+    }
+  }, [isPlaying]);
+
+  // Handle video load event
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    const handleLoadedData = () => {
+      updateVideoTime();
+    };
+
+    video.addEventListener('loadeddata', handleLoadedData);
+    return () => video.removeEventListener('loadeddata', handleLoadedData);
+  }, []);
+
+  useEffect(() => {
+    updateVideoTime();
+  }, [updateVideoTime]);
+
+  return (
+    <video
+      ref={videoRef}
+      src={src}
+      className={className}
+      muted
+      loop
+    />
+  );
+}
 
 export default function ProjectEditor() {
   const params = useParams();
@@ -18,7 +93,7 @@ export default function ProjectEditor() {
   const [timeline, setTimeline] = useState<TimelineItem[]>([]);
   const [selectedTimelineItem, setSelectedTimelineItem] = useState<TimelineItem | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [currentTime, setCurrentTime] = useState(1); // Start at 1s to show logos/colors
+  const [currentTime, setCurrentTime] = useState(0); // Start at 0s
   const [totalDuration, setTotalDuration] = useState(0);
   const [hasPlayedBefore, setHasPlayedBefore] = useState(false);
   const [playbackInterval, setPlaybackInterval] = useState<NodeJS.Timeout | null>(null);
@@ -158,7 +233,10 @@ export default function ProjectEditor() {
       layer.items.map(item => item.start_time + item.duration)
     ), 0);
     const maxEndTime = Math.max(componentMaxTime, mediaMaxTime);
-    setTotalDuration(maxEndTime);
+    
+    // Set minimum duration to 5 seconds (for CSS animations) if no timeline items
+    const finalDuration = maxEndTime > 0 ? maxEndTime : 5;
+    setTotalDuration(finalDuration);
   };
 
   const handleDragStart = (e: React.DragEvent, component: Component) => {
@@ -1200,8 +1278,8 @@ export default function ProjectEditor() {
   };
 
   const handlePlayPause = () => {
-    if (timeline.length === 0) {
-      // No components in timeline, can't play
+    if (totalDuration === 0) {
+      // No duration set, can't play
       return;
     }
 
@@ -1223,7 +1301,7 @@ export default function ProjectEditor() {
         setCurrentTime(0);
       }
       
-      // Play
+      // Play from current position
       setIsPlaying(true);
       const interval = setInterval(() => {
         setCurrentTime(prev => {
@@ -1315,12 +1393,13 @@ export default function ProjectEditor() {
                       style={{ zIndex: 1 }}
                     >
                       {mediaItem.asset.type === 'video' ? (
-                        <video
+                        <VideoTimelineControl
                           src={mediaItem.asset.data}
+                          startTime={mediaItem.start_time}
+                          duration={mediaItem.duration}
+                          currentTime={currentTime}
+                          isPlaying={isPlaying}
                           className="w-full h-full object-cover rounded-lg"
-                          autoPlay
-                          muted
-                          loop
                         />
                       ) : (
                         <img
@@ -1366,9 +1445,9 @@ export default function ProjectEditor() {
               <div className="flex items-center space-x-4">
                 <button
                   onClick={handlePlayPause}
-                  disabled={timeline.length === 0}
+                  disabled={totalDuration === 0}
                   className={`flex items-center px-4 py-2 rounded-lg transition-colors ${
-                    timeline.length === 0
+                    totalDuration === 0
                       ? 'bg-gray-400 text-gray-200 cursor-not-allowed'
                       : 'bg-blue-600 text-white hover:bg-blue-700'
                   }`}
