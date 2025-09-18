@@ -202,112 +202,92 @@ export default function ProjectEditor() {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // Function to render a Lottie frame to canvas
-  const renderLottieFrame = async (lottieData: any, properties: any, frame: number, canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D) => {
-    return new Promise<void>((resolve) => {
-      // Create a temporary container for Lottie
-      const tempContainer = document.createElement('div');
-      tempContainer.style.position = 'absolute';
-      tempContainer.style.left = '-9999px';
-      tempContainer.style.width = '1920px';
-      tempContainer.style.height = '1080px';
-      document.body.appendChild(tempContainer);
+  // Function to create and configure a Lottie instance for video rendering
+  const createVideoLottieInstance = (lottieData: any, properties: any) => {
+    // Helper function to convert hex to RGB
+    const hexToRgb = (hex: string) => {
+      const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+      return result ? {
+        r: parseInt(result[1], 16),
+        g: parseInt(result[2], 16),
+        b: parseInt(result[3], 16)
+      } : null;
+    };
 
-      // Helper function to convert hex to RGB
-      const hexToRgb = (hex: string) => {
-        const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-        return result ? {
-          r: parseInt(result[1], 16),
-          g: parseInt(result[2], 16),
-          b: parseInt(result[3], 16)
-        } : null;
-      };
-
-      // Helper function to update background color
-      const updateCustomerBgColor = (layers: any[], backgroundColor: string) => {
-        layers.forEach(layer => {
-          if (layer.nm === 'CustomerBg') {
-            if (backgroundColor === 'transparent') {
-              layer.ks.o.k = 0;
-            } else {
-              layer.ks.o.k = 100;
-              if (layer.shapes) {
-                layer.shapes.forEach((shape: any) => {
-                  if (shape.ty === 'gr' && shape.it) {
-                    shape.it.forEach((item: any) => {
-                      if (item.ty === 'fl' && item.c) {
-                        const rgb = hexToRgb(backgroundColor);
-                        if (rgb) {
-                          item.c.k = [rgb.r / 255, rgb.g / 255, rgb.b / 255, 1];
-                        }
+    // Helper function to update background color
+    const updateCustomerBgColor = (layers: any[], backgroundColor: string) => {
+      layers.forEach(layer => {
+        if (layer.nm === 'CustomerBg') {
+          if (backgroundColor === 'transparent') {
+            layer.ks.o.k = 0;
+          } else {
+            layer.ks.o.k = 100;
+            if (layer.shapes) {
+              layer.shapes.forEach((shape: any) => {
+                if (shape.ty === 'gr' && shape.it) {
+                  shape.it.forEach((item: any) => {
+                    if (item.ty === 'fl' && item.c) {
+                      const rgb = hexToRgb(backgroundColor);
+                      if (rgb) {
+                        item.c.k = [rgb.r / 255, rgb.g / 255, rgb.b / 255, 1];
                       }
-                    });
-                  } else if (shape.ty === 'fl' && shape.c) {
-                    const rgb = hexToRgb(backgroundColor);
-                    if (rgb) {
-                      shape.c.k = [rgb.r / 255, rgb.g / 255, rgb.b / 255, 1];
                     }
+                  });
+                } else if (shape.ty === 'fl' && shape.c) {
+                  const rgb = hexToRgb(backgroundColor);
+                  if (rgb) {
+                    shape.c.k = [rgb.r / 255, rgb.g / 255, rgb.b / 255, 1];
                   }
-                });
-              }
+                }
+              });
             }
           }
-          if (layer.layers) {
-            updateCustomerBgColor(layer.layers, backgroundColor);
-          }
-        });
-      };
-
-      // Apply properties to the Lottie data
-      const updatedData = JSON.parse(JSON.stringify(lottieData));
-      
-      // Update background color
-      if (properties.backgroundColor) {
-        updateCustomerBgColor(updatedData.layers, properties.backgroundColor);
-      }
-
-      // Update logo if provided
-      if (properties.customerLogo && properties.customerLogo.data) {
-        const logoAsset = updatedData.assets.find((asset: any) => asset.id === '1');
-        if (logoAsset) {
-          logoAsset.p = properties.customerLogo.data;
         }
-      }
-
-      // Create Lottie instance
-      const lottieInstance = lottie.loadAnimation({
-        container: tempContainer,
-        renderer: 'canvas',
-        loop: false,
-        autoplay: false,
-        animationData: updatedData,
-        rendererSettings: {
-          preserveAspectRatio: 'xMidYMid meet',
-          clearCanvas: true,
-          hideOnTransparent: false
+        if (layer.layers) {
+          updateCustomerBgColor(layer.layers, backgroundColor);
         }
       });
+    };
 
-      // Wait for Lottie to be ready, then go to frame
-      lottieInstance.addEventListener('DOMLoaded', () => {
-        lottieInstance.goToAndStop(frame, true);
-        
-        // Wait a bit for the frame to render
-        setTimeout(() => {
-          // Get the canvas from Lottie
-          const lottieCanvas = tempContainer.querySelector('canvas') as HTMLCanvasElement;
-          if (lottieCanvas) {
-            // Draw the Lottie frame to our main canvas
-            ctx.drawImage(lottieCanvas, 0, 0, canvas.width, canvas.height);
-          }
-          
-          // Clean up
-          lottieInstance.destroy();
-          document.body.removeChild(tempContainer);
-          resolve();
-        }, 50);
-      });
+    // Apply properties to the Lottie data
+    const updatedData = JSON.parse(JSON.stringify(lottieData));
+    
+    // Update background color
+    if (properties.backgroundColor) {
+      updateCustomerBgColor(updatedData.layers, properties.backgroundColor);
+    }
+
+    // Update logo if provided
+    if (properties.customerLogo && properties.customerLogo.data) {
+      const logoAsset = updatedData.assets.find((asset: any) => asset.id === '1');
+      if (logoAsset) {
+        logoAsset.p = properties.customerLogo.data;
+      }
+    }
+
+    // Create a hidden container for the Lottie instance
+    const container = document.createElement('div');
+    container.style.position = 'absolute';
+    container.style.left = '-9999px';
+    container.style.width = '1920px';
+    container.style.height = '1080px';
+    document.body.appendChild(container);
+
+    // Create Lottie instance
+    const lottieInstance = lottie.loadAnimation({
+      container: container,
+      renderer: 'canvas',
+      loop: false,
+      autoplay: false,
+      animationData: updatedData,
+      rendererSettings: {
+        preserveAspectRatio: 'xMidYMid meet',
+        clearCanvas: true,
+        hideOnTransparent: false
+      }
     });
+
+    return { lottieInstance, container };
   };
 
   const downloadVideo = async () => {
@@ -330,8 +310,12 @@ export default function ProjectEditor() {
         throw new Error('Could not get canvas context');
       }
 
+      // Enable high-quality rendering
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+
       // Set up MediaRecorder for video capture
-      const stream = canvas.captureStream(30); // 30fps
+      const stream = canvas.captureStream(60); // 60fps for smoother video
       
       // Determine MIME type based on user selection and browser support
       let mimeType = 'video/webm;codecs=vp8';
@@ -424,86 +408,107 @@ export default function ProjectEditor() {
 
       // Wait for all images to load before starting video rendering
       Promise.all(imagePromises).then(() => {
-        // Render timeline components frame by frame
-        const fps = 30;
-        const frameDuration = 1000 / fps; // ms per frame
-        let currentFrame = 0;
-        const totalFrames = Math.ceil(totalDuration * fps);
-
-        const renderFrame = async () => {
-          if (currentFrame >= totalFrames) {
-            mediaRecorder.stop();
-            return;
+        // Create Lottie instances for each component that needs them
+        const lottieInstances: { [key: string]: { lottieInstance: any, container: HTMLElement } } = {};
+        
+        timeline.forEach(item => {
+          if (item.component.type === 'customer_logo_split' && lottieData) {
+            const properties = componentProperties[item.component.id] || {};
+            const { lottieInstance, container } = createVideoLottieInstance(lottieData, properties);
+            lottieInstances[item.component.id] = { lottieInstance, container };
           }
+        });
 
-          const currentTime = (currentFrame / fps);
-          const currentItem = timeline.find(item => 
-            currentTime >= item.start_time && currentTime < item.start_time + item.duration
-          );
+        // Wait for all Lottie instances to be ready
+        const lottieReadyPromises = Object.values(lottieInstances).map(({ lottieInstance }) => {
+          return new Promise<void>((resolve) => {
+            if (lottieInstance.isLoaded) {
+              resolve();
+            } else {
+              lottieInstance.addEventListener('DOMLoaded', () => resolve());
+            }
+          });
+        });
 
-          // Clear canvas
-          if (hasAlphaChannel) {
-            // Transparent background for alpha channel
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-          } else {
-            // White background for standard video
-            ctx.fillStyle = '#ffffff';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-          }
+        Promise.all(lottieReadyPromises).then(() => {
+          // Render timeline components frame by frame
+          const fps = 60; // Match the capture stream fps
+          const frameDuration = 1000 / fps; // ms per frame
+          let currentFrame = 0;
+          const totalFrames = Math.ceil(totalDuration * fps);
 
-          if (currentItem) {
-            // Render the current component
-            const component = currentItem.component;
-            const properties = componentProperties[component.id] || {};
-            
-            // Set background color (only if not using alpha channel)
-            if (!hasAlphaChannel) {
-              ctx.fillStyle = properties.backgroundColor || '#184cb4';
+          const renderFrame = () => {
+            if (currentFrame >= totalFrames) {
+              // Clean up Lottie instances
+              Object.values(lottieInstances).forEach(({ lottieInstance, container }) => {
+                lottieInstance.destroy();
+                document.body.removeChild(container);
+              });
+              mediaRecorder.stop();
+              return;
+            }
+
+            const currentTime = (currentFrame / fps);
+            const currentItem = timeline.find(item => 
+              currentTime >= item.start_time && currentTime < item.start_time + item.duration
+            );
+
+            // Clear canvas
+            if (hasAlphaChannel) {
+              // Transparent background for alpha channel
+              ctx.clearRect(0, 0, canvas.width, canvas.height);
+            } else {
+              // White background for standard video
+              ctx.fillStyle = '#ffffff';
               ctx.fillRect(0, 0, canvas.width, canvas.height);
             }
-            
-            // For Lottie components, render the actual animation
-            if (component.type === 'customer_logo_split' && lottieData) {
-              // Calculate the frame number within the Lottie animation
-              const progress = Math.min(1, (currentTime - currentItem.start_time) / currentItem.duration);
-              const lottieFrame = Math.floor(progress * (lottieData.op - lottieData.ip)); // op = out point, ip = in point
+
+            if (currentItem) {
+              // Render the current component
+              const component = currentItem.component;
+              const properties = componentProperties[component.id] || {};
               
-              try {
-                // Render the actual Lottie frame
-                await renderLottieFrame(lottieData, properties, lottieFrame, canvas, ctx);
-              } catch (error) {
-                console.error('Error rendering Lottie frame:', error);
-                // Fallback to simplified rendering
-                const centerX = canvas.width / 2;
-                const centerY = canvas.height / 2;
-                
-                ctx.fillStyle = '#ffffff';
-                ctx.beginPath();
-                ctx.arc(centerX, centerY, 200, 0, 2 * Math.PI);
-                ctx.fill();
-                
-                ctx.fillStyle = '#184cb4';
-                ctx.font = 'bold 32px Arial';
-                ctx.textAlign = 'center';
-                ctx.fillText('SALESFORCE', centerX, centerY - 10);
-                ctx.font = 'bold 24px Arial';
-                ctx.fillText('LOGO', centerX, centerY + 25);
+              // Set background color (only if not using alpha channel)
+              if (!hasAlphaChannel) {
+                ctx.fillStyle = properties.backgroundColor || '#184cb4';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
               }
-            } else {
-              // For other component types, render a placeholder
-              ctx.fillStyle = '#ffffff';
-              ctx.font = '48px Arial';
-              ctx.textAlign = 'center';
-              ctx.fillText(component.name, canvas.width / 2, canvas.height / 2);
+              
+              // For Lottie components, render the actual animation
+              if (component.type === 'customer_logo_split' && lottieInstances[component.id]) {
+                const { lottieInstance } = lottieInstances[component.id];
+                
+                // Calculate the frame number within the Lottie animation
+                const progress = Math.min(1, (currentTime - currentItem.start_time) / currentItem.duration);
+                const lottieFrame = Math.floor(progress * (lottieData.op - lottieData.ip)); // op = out point, ip = in point
+                
+                // Go to the specific frame
+                lottieInstance.goToAndStop(lottieFrame, true);
+                
+                // Get the canvas from Lottie and draw it to our main canvas
+                const lottieCanvas = lottieInstance.renderer.canvas;
+                if (lottieCanvas) {
+                  ctx.drawImage(lottieCanvas, 0, 0, canvas.width, canvas.height);
+                }
+              } else {
+                // For other component types, render a placeholder
+                ctx.fillStyle = '#ffffff';
+                ctx.font = '48px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText(component.name, canvas.width / 2, canvas.height / 2);
+              }
             }
-          }
 
-          currentFrame++;
-          setTimeout(renderFrame, frameDuration);
-        };
+            currentFrame++;
+            // Use requestAnimationFrame for smoother timing, but cap at our target fps
+            setTimeout(() => {
+              requestAnimationFrame(renderFrame);
+            }, Math.max(0, frameDuration - 16)); // 16ms is ~60fps, so we don't go faster than that
+          };
 
-        // Start rendering
-        renderFrame();
+          // Start rendering
+          renderFrame();
+        });
       });
 
     } catch (error) {
