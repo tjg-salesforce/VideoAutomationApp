@@ -28,6 +28,7 @@ export default function ProjectEditor() {
   const [draggedLayer, setDraggedLayer] = useState<any>(null);
   const [draggedTimelineItem, setDraggedTimelineItem] = useState<any>(null);
   const [draggedMediaItem, setDraggedMediaItem] = useState<any>(null);
+  const [timelineZoom, setTimelineZoom] = useState(1); // 1 = normal, 2 = 2x zoom, 0.5 = half zoom
   const [showComponentLibrary, setShowComponentLibrary] = useState(true);
   const [showMediaLibrary, setShowMediaLibrary] = useState(false);
   const [isRendering, setIsRendering] = useState(false);
@@ -81,6 +82,30 @@ export default function ProjectEditor() {
     calculateTotalDuration(timeline);
   }, [timelineLayers]);
 
+  // Keyboard shortcuts for timeline control
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Only handle shortcuts when not typing in input fields
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+
+      if (e.key === '=' || e.key === '+') {
+        e.preventDefault();
+        setTimelineZoom(Math.min(4, timelineZoom + 0.25));
+      } else if (e.key === '-') {
+        e.preventDefault();
+        setTimelineZoom(Math.max(0.25, timelineZoom - 0.25));
+      } else if (e.key === '0') {
+        e.preventDefault();
+        setTimelineZoom(1);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [timelineZoom]);
+
   const loadProject = async () => {
     try {
       const response = await apiEndpoints.getProject(projectId);
@@ -101,12 +126,17 @@ export default function ProjectEditor() {
         setComponentProperties(properties);
       }
 
-      // Restore media assets and timeline layers if they exist
-      if (projectData.mediaAssets) {
-        setMediaAssets(projectData.mediaAssets);
-      }
-      if (projectData.timelineLayers) {
-        setTimelineLayers(projectData.timelineLayers);
+      // Restore media assets, timeline layers, and zoom from settings if they exist
+      if (projectData.settings) {
+        if (projectData.settings.mediaAssets) {
+          setMediaAssets(projectData.settings.mediaAssets);
+        }
+        if (projectData.settings.timelineLayers) {
+          setTimelineLayers(projectData.settings.timelineLayers);
+        }
+        if (projectData.settings.timelineZoom) {
+          setTimelineZoom(projectData.settings.timelineZoom);
+        }
       }
     } catch (error) {
       console.error('Error loading project:', error);
@@ -403,8 +433,11 @@ export default function ProjectEditor() {
         name: project.name,
         description: project.description,
         timeline: timelineWithProperties,
-        mediaAssets,
-        timelineLayers,
+        settings: {
+          mediaAssets,
+          timelineLayers,
+          timelineZoom
+        },
         status: 'in_progress'
       };
       
@@ -429,7 +462,15 @@ export default function ProjectEditor() {
 
   const generateTimeMarkers = () => {
     const markers = [];
-    const interval = totalDuration > 60 ? 10 : 5; // 10s intervals for long videos, 5s for short
+    // Adjust interval based on zoom level - more granular when zoomed in
+    let interval = totalDuration > 60 ? 10 : 5;
+    if (timelineZoom >= 2) {
+      interval = 1; // 1 second intervals when zoomed in
+    } else if (timelineZoom >= 1.5) {
+      interval = 2; // 2 second intervals
+    } else if (timelineZoom <= 0.5) {
+      interval = totalDuration > 60 ? 30 : 15; // Larger intervals when zoomed out
+    }
     
     for (let i = 0; i <= totalDuration; i += interval) {
       const isMinute = i % 60 === 0 && i > 0;
@@ -1369,6 +1410,42 @@ export default function ProjectEditor() {
               />
             </div>
 
+            {/* Timeline Controls */}
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center space-x-2">
+                <span className="text-sm text-gray-600">Zoom:</span>
+                <button
+                  onClick={() => setTimelineZoom(Math.max(0.25, timelineZoom - 0.25))}
+                  className="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded"
+                  disabled={timelineZoom <= 0.25}
+                  title="Zoom out (- key)"
+                >
+                  -
+                </button>
+                <span className="text-sm text-gray-700 min-w-12 text-center">
+                  {Math.round(timelineZoom * 100)}%
+                </span>
+                <button
+                  onClick={() => setTimelineZoom(Math.min(4, timelineZoom + 0.25))}
+                  className="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded"
+                  disabled={timelineZoom >= 4}
+                  title="Zoom in (+ key)"
+                >
+                  +
+                </button>
+                <button
+                  onClick={() => setTimelineZoom(1)}
+                  className="px-2 py-1 text-xs bg-blue-100 hover:bg-blue-200 text-blue-700 rounded"
+                  title="Reset zoom (0 key)"
+                >
+                  Reset
+                </button>
+              </div>
+              <div className="text-sm text-gray-500">
+                Duration: {formatTime(totalDuration)}
+              </div>
+            </div>
+
             {/* Time Markers */}
             <div className="relative h-8 mb-2 border-b border-gray-200">
               {generateTimeMarkers().map((marker) => (
@@ -1391,6 +1468,10 @@ export default function ProjectEditor() {
               className="border-2 border-dashed border-gray-300 rounded-lg p-4 overflow-x-auto"
               onDragOver={handleDragOver}
               onDrop={handleDrop}
+              style={{ 
+                transform: `scaleX(${timelineZoom})`,
+                transformOrigin: 'left center'
+              }}
             >
               {/* Main Component Layer */}
               <div className="mb-4">
