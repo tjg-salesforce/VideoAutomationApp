@@ -24,8 +24,22 @@ export default function ProjectEditor() {
   const [playbackInterval, setPlaybackInterval] = useState<NodeJS.Timeout | null>(null);
   const [loading, setLoading] = useState(false);
   const [draggedComponent, setDraggedComponent] = useState<Component | null>(null);
+  const [draggedMediaAsset, setDraggedMediaAsset] = useState<any>(null);
   const [showComponentLibrary, setShowComponentLibrary] = useState(true);
+  const [showMediaLibrary, setShowMediaLibrary] = useState(false);
   const [isRendering, setIsRendering] = useState(false);
+  const [mediaAssets, setMediaAssets] = useState<any[]>([]);
+  const [timelineLayers, setTimelineLayers] = useState<{
+    id: string;
+    name: string;
+    items: {
+      id: string;
+      asset: any;
+      start_time: number;
+      duration: number;
+      layerId: string;
+    }[];
+  }[]>([]);
   const [videoFormat, setVideoFormat] = useState<'mp4' | 'webm' | 'mov'>('mp4');
   const [hasAlphaChannel, setHasAlphaChannel] = useState(false);
   const [showDownloadModal, setShowDownloadModal] = useState(false);
@@ -100,6 +114,13 @@ export default function ProjectEditor() {
 
   const handleDragStart = (e: React.DragEvent, component: Component) => {
     setDraggedComponent(component);
+    setDraggedMediaAsset(null);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleMediaDragStart = (e: React.DragEvent, mediaAsset: any) => {
+    setDraggedMediaAsset(mediaAsset);
+    setDraggedComponent(null);
     e.dataTransfer.effectAllowed = 'move';
   };
 
@@ -108,45 +129,113 @@ export default function ProjectEditor() {
     e.dataTransfer.dropEffect = 'move';
   };
 
+  const handleMediaUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+
+    Array.from(files).forEach(file => {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const newAsset = {
+          id: `media_${Date.now()}_${Math.random()}`,
+          name: file.name,
+          type: file.type.startsWith('video/') ? 'video' : 'image',
+          data: event.target?.result as string,
+          duration: file.type.startsWith('video/') ? 5 : 3, // Default durations
+          file: file
+        };
+        setMediaAssets(prev => [...prev, newAsset]);
+      };
+      reader.readAsDataURL(file);
+    });
+    
+    // Reset the input
+    e.target.value = '';
+  };
+
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
-    if (!draggedComponent) return;
-
+    
     const timelineRect = timelineRef.current?.getBoundingClientRect();
     if (!timelineRect) return;
 
     const x = e.clientX - timelineRect.left;
+    const y = e.clientY - timelineRect.top;
     const timePerPixel = totalDuration / timelineRect.width;
     const startTime = Math.max(0, Math.min(totalDuration, x * timePerPixel));
 
-    const newItem: TimelineItem = {
-      id: `timeline_${Date.now()}`,
-      component_id: draggedComponent.id,
-      component: draggedComponent,
-      start_time: startTime,
-      duration: draggedComponent.duration || 5,
-      order: timeline.length
-    };
+    if (draggedComponent) {
+      const newItem: TimelineItem = {
+        id: `timeline_${Date.now()}`,
+        component_id: draggedComponent.id,
+        component: draggedComponent,
+        start_time: startTime,
+        duration: draggedComponent.duration || 5,
+        order: timeline.length
+      };
 
-    // Set default properties for the component
-    setComponentProperties(prev => ({
-      ...prev,
-      [draggedComponent.id]: {
-        backgroundColor: '#184cb4', // Default blue background
-        logoScale: 1,
-        customerLogo: null
+      // Set default properties for the component
+      setComponentProperties(prev => ({
+        ...prev,
+        [draggedComponent.id]: {
+          backgroundColor: '#184cb4', // Default blue background
+          logoScale: 1,
+          customerLogo: null
+        }
+      }));
+
+      const newTimeline = [...timeline, newItem].sort((a, b) => a.start_time - b.start_time);
+      setTimeline(newTimeline);
+      calculateTotalDuration(newTimeline);
+      
+      // Auto-select the new component and show properties
+      setSelectedTimelineItem(newItem);
+      setShowComponentLibrary(false);
+      setShowMediaLibrary(false);
+      
+      setDraggedComponent(null);
+    } else if (draggedMediaAsset) {
+      // Check if dropping on an existing layer or creating a new one
+      const layerHeight = 80; // Height of each layer section
+      const layerIndex = Math.floor(y / layerHeight);
+      
+      if (layerIndex < timelineLayers.length) {
+        // Add to existing layer
+        const targetLayer = timelineLayers[layerIndex];
+        const newMediaItem = {
+          id: `media_${Date.now()}`,
+          asset: draggedMediaAsset,
+          start_time: startTime,
+          duration: draggedMediaAsset.duration,
+          layerId: targetLayer.id
+        };
+        
+        setTimelineLayers(prev => prev.map(layer => 
+          layer.id === targetLayer.id 
+            ? { ...layer, items: [...layer.items, newMediaItem] }
+            : layer
+        ));
+      } else {
+        // Create a new layer
+        const newMediaItem = {
+          id: `media_${Date.now()}`,
+          asset: draggedMediaAsset,
+          start_time: startTime,
+          duration: draggedMediaAsset.duration,
+          layerId: `layer_${Date.now()}`
+        };
+        
+        const newLayer = {
+          id: newMediaItem.layerId,
+          name: `Layer ${timelineLayers.length + 1}`,
+          items: [newMediaItem]
+        };
+        
+        setTimelineLayers(prev => [...prev, newLayer]);
       }
-    }));
-
-    const newTimeline = [...timeline, newItem].sort((a, b) => a.start_time - b.start_time);
-    setTimeline(newTimeline);
-    calculateTotalDuration(newTimeline);
-    
-    // Auto-select the new component and show properties
-    setSelectedTimelineItem(newItem);
-    setShowComponentLibrary(false);
-    
-    setDraggedComponent(null);
+      
+      setDraggedMediaAsset(null);
+    }
   };
 
   const removeFromTimeline = (itemId: string) => {
@@ -1101,39 +1190,106 @@ export default function ProjectEditor() {
             {/* Timeline Tracks */}
             <div 
               ref={timelineRef}
-              className="h-24 border-2 border-dashed border-gray-300 rounded-lg p-4 overflow-x-auto"
+              className="border-2 border-dashed border-gray-300 rounded-lg p-4 overflow-x-auto"
               onDragOver={handleDragOver}
               onDrop={handleDrop}
             >
-              <div className="flex space-x-2 h-full">
-                {timeline.map((item) => (
-                  <div
-                    key={item.id}
-                    onClick={() => {
-                      setSelectedTimelineItem(item);
-                      setShowComponentLibrary(false);
-                    }}
-                    className={`min-w-32 h-full rounded-lg p-3 cursor-pointer transition-colors ${
-                      selectedTimelineItem?.id === item.id
-                        ? 'bg-blue-500 text-white'
-                        : 'bg-blue-100 text-blue-900 hover:bg-blue-200'
-                    }`}
-                    style={{
-                      width: `${(item.duration / totalDuration) * 100}%`,
-                      minWidth: '120px'
-                    }}
-                  >
-                    <div className="text-sm font-medium truncate">{item.component.name}</div>
-                    <div className="text-xs opacity-75">
-                      {formatTime(item.start_time)} - {formatTime(item.start_time + item.duration)}
+              {/* Main Component Layer */}
+              <div className="mb-4">
+                <div className="flex items-center mb-2">
+                  <h4 className="text-sm font-medium text-gray-700">Components</h4>
+                  <div className="ml-2 w-3 h-3 bg-blue-500 rounded"></div>
+                </div>
+                <div className="h-16 flex space-x-2">
+                  {timeline.map((item) => (
+                    <div
+                      key={item.id}
+                      onClick={() => {
+                        setSelectedTimelineItem(item);
+                        setShowComponentLibrary(false);
+                        setShowMediaLibrary(false);
+                      }}
+                      className={`min-w-32 h-full rounded-lg p-3 cursor-pointer transition-colors ${
+                        selectedTimelineItem?.id === item.id
+                          ? 'bg-blue-500 text-white'
+                          : 'bg-blue-100 text-blue-900 hover:bg-blue-200'
+                      }`}
+                      style={{
+                        width: `${(item.duration / totalDuration) * 100}%`,
+                        minWidth: '120px'
+                      }}
+                    >
+                      <div className="text-sm font-medium truncate">{item.component.name}</div>
+                      <div className="text-xs opacity-75">
+                        {formatTime(item.start_time)} - {formatTime(item.start_time + item.duration)}
+                      </div>
                     </div>
+                  ))}
+                  {timeline.length === 0 && (
+                    <div className="flex-1 flex items-center justify-center text-gray-500">
+                      <p>Drag components here to add them to the timeline</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Media Layers */}
+              {timelineLayers.map((layer, layerIndex) => (
+                <div key={layer.id} className="mb-4">
+                  <div className="flex items-center mb-2">
+                    <h4 className="text-sm font-medium text-gray-700">{layer.name}</h4>
+                    <div className="ml-2 w-3 h-3 bg-green-500 rounded"></div>
+                    <button
+                      onClick={() => {
+                        setTimelineLayers(prev => prev.filter(l => l.id !== layer.id));
+                      }}
+                      className="ml-auto text-gray-400 hover:text-red-500"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
                   </div>
-                ))}
-                {timeline.length === 0 && (
-                  <div className="flex-1 flex items-center justify-center text-gray-500">
-                    <p>Drag components here to add them to the timeline</p>
+                  <div className="h-16 flex space-x-2">
+                    {layer.items.map((item: any) => (
+                      <div
+                        key={item.id}
+                        className="min-w-32 h-full rounded-lg p-3 cursor-pointer transition-colors bg-green-100 text-green-900 hover:bg-green-200"
+                        style={{
+                          width: `${(item.duration / totalDuration) * 100}%`,
+                          minWidth: '120px'
+                        }}
+                      >
+                        <div className="text-sm font-medium truncate">{item.asset.name}</div>
+                        <div className="text-xs opacity-75">
+                          {formatTime(item.start_time)} - {formatTime(item.start_time + item.duration)}
+                        </div>
+                      </div>
+                    ))}
+                    {layer.items.length === 0 && (
+                      <div className="flex-1 flex items-center justify-center text-gray-500">
+                        <p>Drag media here to add to this layer</p>
+                      </div>
+                    )}
                   </div>
-                )}
+                </div>
+              ))}
+
+              {/* Add New Layer Button */}
+              <div className="mt-4">
+                <button
+                  onClick={() => {
+                    const newLayer = {
+                      id: `layer_${Date.now()}`,
+                      name: `Layer ${timelineLayers.length + 1}`,
+                      items: []
+                    };
+                    setTimelineLayers(prev => [...prev, newLayer]);
+                  }}
+                  className="px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 text-sm"
+                >
+                  + Add New Layer
+                </button>
               </div>
             </div>
           </div>
@@ -1142,15 +1298,16 @@ export default function ProjectEditor() {
         {/* Component Library & Properties Sidebar */}
         <div className="w-80 border-l border-gray-200 overflow-y-auto bg-white">
           <div className="p-6">
-            {/* Toggle between Component Library and Properties */}
+            {/* Toggle between Component Library, Media Library and Properties */}
             <div className="flex mb-4 border-b border-gray-200">
               <button
                 onClick={() => {
                   setShowComponentLibrary(true);
+                  setShowMediaLibrary(false);
                   setSelectedTimelineItem(null);
                 }}
-                className={`flex-1 px-3 py-2 text-sm font-medium ${
-                  showComponentLibrary
+                className={`flex-1 px-2 py-2 text-xs font-medium ${
+                  showComponentLibrary && !showMediaLibrary
                     ? 'text-blue-600 border-b-2 border-blue-600'
                     : 'text-gray-500 hover:text-gray-700'
                 }`}
@@ -1158,9 +1315,26 @@ export default function ProjectEditor() {
                 Components
               </button>
               <button
-                onClick={() => setShowComponentLibrary(false)}
-                className={`flex-1 px-3 py-2 text-sm font-medium ${
-                  !showComponentLibrary
+                onClick={() => {
+                  setShowComponentLibrary(false);
+                  setShowMediaLibrary(true);
+                  setSelectedTimelineItem(null);
+                }}
+                className={`flex-1 px-2 py-2 text-xs font-medium ${
+                  showMediaLibrary
+                    ? 'text-blue-600 border-b-2 border-blue-600'
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                Media
+              </button>
+              <button
+                onClick={() => {
+                  setShowComponentLibrary(false);
+                  setShowMediaLibrary(false);
+                }}
+                className={`flex-1 px-2 py-2 text-xs font-medium ${
+                  !showComponentLibrary && !showMediaLibrary
                     ? 'text-blue-600 border-b-2 border-blue-600'
                     : 'text-gray-500 hover:text-gray-700'
                 }`}
@@ -1187,6 +1361,71 @@ export default function ProjectEditor() {
                       <p className="text-xs text-gray-400 mt-1">{component.type}</p>
                     </div>
                   ))}
+                </div>
+              </div>
+            ) : showMediaLibrary ? (
+              // Media Library
+              <div>
+                <h3 className="text-lg font-medium text-gray-900 mb-4">Media Assets</h3>
+                
+                {/* Upload Button */}
+                <div className="mb-4">
+                  <input
+                    type="file"
+                    accept="video/*,image/*"
+                    multiple
+                    onChange={handleMediaUpload}
+                    className="hidden"
+                    id="media-upload"
+                  />
+                  <label
+                    htmlFor="media-upload"
+                    className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 cursor-pointer text-center block"
+                  >
+                    Upload Media
+                  </label>
+                </div>
+                
+                {/* Media Assets List */}
+                <div className="space-y-2">
+                  {mediaAssets.map((asset) => (
+                    <div
+                      key={asset.id}
+                      draggable
+                      onDragStart={(e) => handleMediaDragStart(e, asset)}
+                      className="p-3 border border-gray-200 rounded-lg cursor-move hover:bg-gray-50 transition-colors"
+                    >
+                      <div className="flex items-center space-x-3">
+                        {asset.type === 'video' ? (
+                          <div className="w-8 h-8 bg-red-100 rounded flex items-center justify-center">
+                            <svg className="w-4 h-4 text-red-600" fill="currentColor" viewBox="0 0 20 20">
+                              <path d="M2 6a2 2 0 012-2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zM14.553 7.106A1 1 0 0014 8v4a1 1 0 00.553.894l2 1A1 1 0 0018 13V7a1 1 0 00-1.447-.894l-2 1z" />
+                            </svg>
+                          </div>
+                        ) : (
+                          <div className="w-8 h-8 bg-green-100 rounded flex items-center justify-center">
+                            <svg className="w-4 h-4 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clipRule="evenodd" />
+                            </svg>
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-900 truncate">{asset.name}</p>
+                          <p className="text-xs text-gray-500">{asset.type} • {asset.duration}s</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  
+                  {mediaAssets.length === 0 && (
+                    <div className="text-center py-8 text-gray-500">
+                      <svg className="w-12 h-12 mx-auto mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                      </svg>
+                      <p className="text-sm">No media assets uploaded yet</p>
+                      <p className="text-xs text-gray-400 mt-1">Upload videos or images to get started</p>
+                    </div>
+                  )}
                 </div>
               </div>
             ) : selectedTimelineItem ? (
