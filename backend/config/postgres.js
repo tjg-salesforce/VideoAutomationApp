@@ -7,12 +7,30 @@ const initializePostgres = () => {
     pool = new Pool({
       connectionString: process.env.DATABASE_URL,
       ssl: process.env.DATABASE_URL && process.env.DATABASE_URL.includes('amazonaws.com') ? { rejectUnauthorized: false } : false,
-      max: 20,
-      idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 2000,
+      max: 10, // Reduced from 20 to prevent connection exhaustion
+      min: 2,  // Keep minimum connections alive
+      idleTimeoutMillis: 60000, // Increased from 30000
+      connectionTimeoutMillis: 10000, // Increased from 2000
+      acquireTimeoutMillis: 10000, // Add acquire timeout
+      createTimeoutMillis: 10000, // Add create timeout
+      destroyTimeoutMillis: 5000, // Add destroy timeout
+      reapIntervalMillis: 1000, // Check for idle connections every second
+      createRetryIntervalMillis: 200, // Retry connection creation
     });
 
-    console.log('🐘 PostgreSQL connected successfully');
+    // Handle pool errors
+    pool.on('error', (err, client) => {
+      console.error('Unexpected error on idle client', err);
+    });
+
+    // Test the connection
+    pool.query('SELECT NOW()')
+      .then(() => {
+        console.log('🐘 PostgreSQL connected successfully');
+      })
+      .catch((err) => {
+        console.error('❌ PostgreSQL connection failed:', err.message);
+      });
   }
   return pool;
 };
@@ -24,17 +42,33 @@ const getPool = () => {
   return pool;
 };
 
-const query = async (text, params) => {
+const query = async (text, params, retries = 3) => {
   const pool = getPool();
   const start = Date.now();
-  try {
-    const res = await pool.query(text, params);
-    const duration = Date.now() - start;
-    console.log('Executed query', { text, duration, rows: res.rowCount });
-    return res;
-  } catch (error) {
-    console.error('Database query error:', error);
-    throw error;
+  
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const res = await pool.query(text, params);
+      const duration = Date.now() - start;
+      console.log('Executed query', { text, duration, rows: res.rowCount });
+      return res;
+    } catch (error) {
+      console.error(`Database query error (attempt ${attempt}/${retries}):`, error.message);
+      
+      // If it's a connection error and we have retries left, wait and try again
+      if (attempt < retries && (
+        error.message.includes('Connection terminated') ||
+        error.message.includes('timeout') ||
+        error.message.includes('ECONNRESET') ||
+        error.message.includes('ENOTFOUND')
+      )) {
+        console.log(`Retrying query in ${attempt * 1000}ms...`);
+        await new Promise(resolve => setTimeout(resolve, attempt * 1000));
+        continue;
+      }
+      
+      throw error;
+    }
   }
 };
 

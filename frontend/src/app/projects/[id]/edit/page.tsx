@@ -104,6 +104,7 @@ export default function ProjectEditor() {
   const [draggedTimelineItem, setDraggedTimelineItem] = useState<any>(null);
   const [draggedMediaItem, setDraggedMediaItem] = useState<any>(null);
   const [dragPreview, setDragPreview] = useState<{x: number, y: number, time: number, layer: number, snapTarget?: string} | null>(null);
+  const [dragOutline, setDragOutline] = useState<{x: number, y: number, time: number, layer: number, width: number, item: any, targetTop?: number} | null>(null);
   const [snapToGrid, setSnapToGrid] = useState(true);
   const [editingLayerName, setEditingLayerName] = useState<string | null>(null);
   const [editingLayerValue, setEditingLayerValue] = useState('');
@@ -131,6 +132,10 @@ export default function ProjectEditor() {
   
   // Component properties state
   const [componentProperties, setComponentProperties] = useState<{[key: string]: any}>({});
+  
+  // Media properties state
+  const [mediaProperties, setMediaProperties] = useState<{[key: string]: any}>({});
+  const [selectedMediaItem, setSelectedMediaItem] = useState<any>(null);
   
   const timelineRef = useRef<HTMLDivElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
@@ -186,49 +191,90 @@ export default function ProjectEditor() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [timelineZoom]);
 
-  const loadProject = async () => {
-    try {
-      const response = await apiEndpoints.getProject(projectId);
-      const projectData = response.data.data;
-      setProject(projectData);
-      
-      // Restore component properties if they exist
-      if (projectData.componentProperties) {
-        setComponentProperties(projectData.componentProperties);
-      } else if (projectData.timeline) {
-        // Extract properties from timeline items if they exist
-        const properties: { [key: string]: any } = {};
-        projectData.timeline.forEach((item: any) => {
-          if (item.properties) {
-            properties[item.component.id] = item.properties;
-          }
-        });
-        setComponentProperties(properties);
-      }
+  const loadProject = async (retries = 3) => {
+    for (let attempt = 1; attempt <= retries; attempt++) {
+      try {
+        const response = await apiEndpoints.getProject(projectId);
+        const projectData = response.data.data;
+        setProject(projectData);
+        
+        // Restore component properties if they exist
+        if (projectData.componentProperties) {
+          setComponentProperties(projectData.componentProperties);
+        } else if (projectData.timeline) {
+          // Extract properties from timeline items if they exist
+          const properties: { [key: string]: any } = {};
+          projectData.timeline.forEach((item: any) => {
+            if (item.properties) {
+              properties[item.component.id] = item.properties;
+            }
+          });
+          setComponentProperties(properties);
+        }
 
-      // Restore media assets, timeline layers, and zoom from settings if they exist
-      if (projectData.settings) {
-        if (projectData.settings.mediaAssets) {
-          setMediaAssets(projectData.settings.mediaAssets);
+        // Restore media assets, timeline layers, and zoom from settings if they exist
+        if (projectData.settings) {
+          if (projectData.settings.mediaAssets) {
+            setMediaAssets(projectData.settings.mediaAssets);
+          }
+          if (projectData.settings.timelineLayers) {
+            setTimelineLayers(projectData.settings.timelineLayers);
+          }
+          if (projectData.settings.timelineZoom) {
+            setTimelineZoom(projectData.settings.timelineZoom);
+          }
         }
-        if (projectData.settings.timelineLayers) {
-          setTimelineLayers(projectData.settings.timelineLayers);
+        return; // Success, exit the retry loop
+      } catch (error) {
+        console.error(`Error loading project (attempt ${attempt}/${retries}):`, error);
+        
+        // If it's a network error and we have retries left, wait and try again
+        if (attempt < retries && (
+          (error as any).message?.includes('Network Error') ||
+          (error as any).message?.includes('ERR_NETWORK') ||
+          (error as any).code === 'ERR_NETWORK' ||
+          (error as any).response?.status >= 500
+        )) {
+          console.log(`Retrying project load in ${attempt * 1000}ms...`);
+          await new Promise(resolve => setTimeout(resolve, attempt * 1000));
+          continue;
         }
-        if (projectData.settings.timelineZoom) {
-          setTimelineZoom(projectData.settings.timelineZoom);
+        
+        // If all retries failed, show error message
+        if (attempt === retries) {
+          console.error('Failed to load project after all retries');
         }
       }
-    } catch (error) {
-      console.error('Error loading project:', error);
     }
   };
 
-  const loadComponents = async () => {
-    try {
-      const response = await apiEndpoints.getComponents();
-      setComponents(response.data.data || []);
-    } catch (error) {
-      console.error('Error loading components:', error);
+  const loadComponents = async (retries = 3) => {
+    for (let attempt = 1; attempt <= retries; attempt++) {
+      try {
+        const response = await apiEndpoints.getComponents();
+        setComponents(response.data.data || []);
+        return; // Success, exit the retry loop
+      } catch (error) {
+        console.error(`Error loading components (attempt ${attempt}/${retries}):`, error);
+        
+        // If it's a network error and we have retries left, wait and try again
+        if (attempt < retries && (
+          (error as any).message?.includes('Network Error') ||
+          (error as any).message?.includes('ERR_NETWORK') ||
+          (error as any).code === 'ERR_NETWORK' ||
+          (error as any).response?.status >= 500
+        )) {
+          console.log(`Retrying components load in ${attempt * 1000}ms...`);
+          await new Promise(resolve => setTimeout(resolve, attempt * 1000));
+          continue;
+        }
+        
+        // If all retries failed, set empty array as fallback
+        if (attempt === retries) {
+          console.error('Failed to load components after all retries, using empty array');
+          setComponents([]);
+        }
+      }
     }
   };
 
@@ -276,11 +322,18 @@ export default function ProjectEditor() {
   };
 
   const handleMediaItemDragStart = (e: React.DragEvent, item: any, layerId: string) => {
-    setDraggedMediaItem({ ...item, layerId });
+    // Calculate the offset from where the user clicked to the clip's start position
+    const rect = e.currentTarget.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const clipStartX = 0; // The clip starts at the left edge of its container
+    const clickOffset = clickX - clipStartX;
+    
+    setDraggedMediaItem({ ...item, layerId, clickOffset });
     setDraggedComponent(null);
     setDraggedMediaAsset(null);
     setDraggedLayer(null);
     setDragPreview(null); // Clear any existing drag preview
+    setDragOutline(null); // Clear any existing drag outline
     e.dataTransfer.effectAllowed = 'move';
   };
 
@@ -288,17 +341,21 @@ export default function ProjectEditor() {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
     
-    // Update drag preview
-    if (timelineRef.current) {
-      const timelineRect = timelineRef.current.getBoundingClientRect();
-    const x = e.clientX - timelineRect.left;
-    const y = e.clientY - timelineRect.top;
-    const timePerPixel = totalDuration / timelineRect.width;
-      const time = Math.max(0, Math.min(totalDuration, x * timePerPixel));
-      const layerHeight = 80;
-      const mainLayerHeight = 80; // Height of main component layer
-      const adjustedY = y - mainLayerHeight;
-      const layer = Math.max(0, Math.floor(adjustedY / layerHeight));
+      // Update drag preview
+      if (timelineRef.current) {
+        const timelineRect = timelineRef.current.getBoundingClientRect();
+        const x = e.clientX - timelineRect.left;
+        const y = e.clientY - timelineRect.top;
+        const timePerPixel = totalDuration / timelineRect.width;
+        const time = Math.max(0, Math.min(totalDuration, x * timePerPixel));
+        
+        // Calculate layer index based on actual layer structure
+        // Main component layer: 80px
+        // Each media layer: 44px header + 64px content + 16px mb-4 = 124px total
+        const mainLayerHeight = 80;
+        const mediaLayerHeight = 124; // 44px header + 64px content + 16px mb-4
+        const adjustedY = y - mainLayerHeight;
+        const layer = Math.max(0, Math.floor(adjustedY / mediaLayerHeight));
       
       let finalTime = time;
       let snapTarget = null;
@@ -326,6 +383,42 @@ export default function ProjectEditor() {
       }
       
       setDragPreview({ x, y, time: finalTime, layer, snapTarget: snapTarget || undefined });
+      
+      // Set drag outline for media items
+      if (draggedMediaItem) {
+        const itemWidth = (draggedMediaItem.duration / totalDuration) * timelineRect.width;
+        
+        // Try to find the actual layer content area and position relative to it
+        const layerElements = document.querySelectorAll('[data-layer-content]');
+        let targetTop = 80 + (layer * 124) + 44; // Fallback calculation
+        
+        if (layerElements[layer]) {
+          const layerRect = layerElements[layer].getBoundingClientRect();
+          const timelineRect = timelineRef.current?.getBoundingClientRect();
+          if (timelineRect) {
+            targetTop = layerRect.top - timelineRect.top;
+            console.log('Using actual DOM positioning - Layer rect top:', layerRect.top, 'Timeline rect top:', timelineRect.top, 'Calculated target top:', targetTop);
+          }
+        } else {
+          console.log('Using fallback calculation - Layer:', layer, 'Calculated top:', targetTop);
+        }
+        
+        // Calculate the preview position accounting for the click offset
+        const clickOffset = draggedMediaItem.clickOffset || 0;
+        const previewTime = Math.max(0, finalTime - (clickOffset / timelineRect.width) * totalDuration);
+        
+        setDragOutline({ 
+          x, 
+          y, 
+          time: previewTime, 
+          layer, 
+          width: itemWidth,
+          item: draggedMediaItem,
+          targetTop
+        });
+      } else {
+        setDragOutline(null);
+      }
     }
   };
 
@@ -397,8 +490,9 @@ export default function ProjectEditor() {
       startTime = Math.round(startTime * 4) / 4;
     }
     
-    // Clear drag preview
+    // Clear drag preview and outline
     setDragPreview(null);
+    setDragOutline(null);
 
     if (draggedComponent) {
       const layerHeight = 80;
@@ -435,8 +529,10 @@ export default function ProjectEditor() {
       setDraggedComponent(null);
     } else if (draggedMediaAsset) {
       // Check if dropping on an existing layer or creating a new one
-      const layerHeight = 80; // Height of each layer section
-      const layerIndex = Math.floor(y / layerHeight);
+      const mainLayerHeight = 80; // Height of main component layer
+      const mediaLayerHeight = 124; // 44px header + 64px content + 16px mb-4
+      const adjustedY = y - mainLayerHeight;
+      const layerIndex = Math.max(0, Math.floor(adjustedY / mediaLayerHeight));
       
       if (layerIndex < timelineLayers.length) {
         // Add to existing layer
@@ -454,6 +550,18 @@ export default function ProjectEditor() {
             ? { ...layer, items: [...layer.items, newMediaItem] }
             : layer
         ));
+        
+        // Set default properties for the media item
+        setMediaProperties(prev => ({
+          ...prev,
+          [newMediaItem.id]: {
+            scale: 1,
+            x: 0,
+            y: 0,
+            opacity: 1,
+            rotation: 0
+          }
+        }));
       } else {
         // Create a new layer
         const newMediaItem = {
@@ -472,15 +580,27 @@ export default function ProjectEditor() {
         };
         
         setTimelineLayers(prev => [...prev, newLayer]);
+        
+        // Set default properties for the media item
+        setMediaProperties(prev => ({
+          ...prev,
+          [newMediaItem.id]: {
+            scale: 1,
+            x: 0,
+            y: 0,
+            opacity: 1,
+            rotation: 0
+          }
+        }));
       }
       
       setDraggedMediaAsset(null);
-    } else if (draggedLayer) {
-      // Handle layer reordering
-      const layerHeight = 80; // Height of each layer section
-      const mainLayerHeight = 80; // Height of main component layer
-      const adjustedY = y - mainLayerHeight;
-      const newIndex = Math.max(0, Math.floor(adjustedY / layerHeight));
+        } else if (draggedLayer) {
+          // Handle layer reordering
+          const mainLayerHeight = 80; // Height of main component layer
+          const mediaLayerHeight = 124; // 44px header + 64px content + 16px mb-4
+          const adjustedY = y - mainLayerHeight;
+          const newIndex = Math.max(0, Math.floor(adjustedY / mediaLayerHeight));
       
       if (newIndex >= 0 && newIndex <= timelineLayers.length) {
         const currentIndex = timelineLayers.findIndex(layer => layer.id === draggedLayer.id);
@@ -522,10 +642,16 @@ export default function ProjectEditor() {
       const newStartTime = (x / timelineWidth) * totalDuration;
       
       // Calculate target layer index - account for the main component layer (first layer)
-      // Main component layer takes up space, so we need to offset by that
+      // Main component layer: 80px
+      // Each media layer: 44px header + 64px content + 16px mb-4 = 124px total
       const mainLayerHeight = 80; // Height of main component layer
+      const mediaLayerHeight = 124; // 44px header + 64px content + 16px mb-4
       const adjustedY = y - mainLayerHeight;
-      const targetLayerIndex = Math.max(0, Math.floor(adjustedY / layerHeight));
+      const targetLayerIndex = Math.max(0, Math.floor(adjustedY / mediaLayerHeight));
+      
+        console.log('Media drag drop - Y:', y, 'AdjustedY:', adjustedY, 'TargetLayerIndex:', targetLayerIndex, 'TimelineLayers.length:', timelineLayers.length);
+        console.log('Layer calculation: mainLayerHeight:', mainLayerHeight, 'mediaLayerHeight:', mediaLayerHeight);
+        console.log('Available layers:', timelineLayers.map((l, i) => ({ index: i, id: l.id, name: l.name })));
       
       // Use the snapped time from drag preview if available
       let finalStartTime = newStartTime;
@@ -539,6 +665,11 @@ export default function ProjectEditor() {
         finalStartTime = snapToGrid ? Math.round(clampedStartTime * 4) / 4 : clampedStartTime;
       }
       
+      // Account for click offset to maintain the clip's start position
+      const clickOffset = draggedMediaItem.clickOffset || 0;
+      const offsetTime = (clickOffset / timelineWidth) * totalDuration;
+      finalStartTime = Math.max(0, finalStartTime - offsetTime);
+      
       setTimelineLayers(prev => {
         const newLayers = [...prev];
         
@@ -546,9 +677,13 @@ export default function ProjectEditor() {
         const sourceLayerIndex = newLayers.findIndex(layer => layer.id === draggedMediaItem.layerId);
         
         if (sourceLayerIndex !== -1) {
+          console.log('Source layer found at index:', sourceLayerIndex, 'Layer ID:', draggedMediaItem.layerId);
+          console.log('Target layer index:', targetLayerIndex, 'Available layers:', newLayers.length);
+          
           // Check if moving within the same layer
           if (targetLayerIndex >= 0 && targetLayerIndex < newLayers.length && 
               newLayers[targetLayerIndex].id === draggedMediaItem.layerId) {
+            console.log('Same layer move - updating position');
             // Same layer - just update the position
             newLayers[sourceLayerIndex] = {
               ...newLayers[sourceLayerIndex],
@@ -559,6 +694,7 @@ export default function ProjectEditor() {
               )
             };
           } else {
+            console.log('Different layer move - removing from source and adding to target');
             // Different layer - remove from source and add to target
             newLayers[sourceLayerIndex] = {
               ...newLayers[sourceLayerIndex],
@@ -567,6 +703,7 @@ export default function ProjectEditor() {
             
             // Add to target layer (or create new layer if needed)
             if (targetLayerIndex >= 0 && targetLayerIndex < newLayers.length) {
+              console.log('Adding to existing layer at index:', targetLayerIndex);
               const targetLayer = newLayers[targetLayerIndex];
               newLayers[targetLayerIndex] = {
                 ...targetLayer,
@@ -576,6 +713,7 @@ export default function ProjectEditor() {
                 ]
               };
             } else {
+              console.log('Creating new layer - targetLayerIndex:', targetLayerIndex, 'newLayers.length:', newLayers.length);
               // If dropping outside existing layers, create a new layer
               const newLayerId = `layer_${Date.now()}`;
               newLayers.push({
@@ -901,6 +1039,8 @@ export default function ProjectEditor() {
       console.log('Starting video rendering...');
       
       // Create a high-resolution canvas for rendering
+      // Canvas maintains 16:9 aspect ratio (1920x1080) to match preview
+      // This ensures video exports match the preview aspect ratio and cropping behavior
       const canvas = document.createElement('canvas');
       canvas.width = 1920;
       canvas.height = 1080;
@@ -1452,17 +1592,34 @@ export default function ProjectEditor() {
           <div className="flex-1 flex items-center justify-center p-6 bg-gray-100">
             <div className="w-full h-full max-w-6xl relative" style={{ aspectRatio: '16/9' }}>
               {/* Render media layers first (background) */}
-              {timelineLayers.map((layer) => 
+              {timelineLayers.map((layer, layerIndex) => 
                 layer.visible && layer.items.map((mediaItem) => {
                   const isActive = currentTime >= mediaItem.start_time && currentTime < mediaItem.start_time + mediaItem.duration;
                   if (!isActive) return null;
                   
+                  const mediaProps = mediaProperties[mediaItem.id] || {
+                    scale: 1,
+                    x: 0,
+                    y: 0,
+                    opacity: 1,
+                    rotation: 0
+                  };
+                  
                   return (
                     <div
                       key={mediaItem.id}
-                      className="absolute inset-0 w-full h-full"
-                      style={{ zIndex: 1 }}
+                      className="absolute inset-0 w-full h-full overflow-hidden"
+                      style={{ 
+                        zIndex: timelineLayers.length - layerIndex
+                      }}
                     >
+                      <div
+                        className="w-full h-full"
+                        style={{ 
+                          transform: `translate(${mediaProps.x}px, ${mediaProps.y}px) scale(${mediaProps.scale}) rotate(${mediaProps.rotation}deg)`,
+                          opacity: mediaProps.opacity
+                        }}
+                      >
                       {mediaItem.asset.type === 'video' ? (
                           <VideoTimelineControl
                           src={mediaItem.asset.data}
@@ -1470,15 +1627,16 @@ export default function ProjectEditor() {
                           duration={mediaItem.duration}
                             currentTime={currentTime}
                             isPlaying={isPlaying}
-                            className="w-full h-full object-cover rounded-lg"
+                            className="w-full h-full object-contain rounded-lg"
                           />
                         ) : (
                           <img
                           src={mediaItem.asset.data}
                           alt={mediaItem.asset.name}
-                            className="w-full h-full object-cover rounded-lg"
+                            className="w-full h-full object-contain rounded-lg"
                           />
                       )}
+                      </div>
                     </div>
                   );
                 })
@@ -1486,7 +1644,7 @@ export default function ProjectEditor() {
               
               {/* Render components on top */}
               {getCurrentTimelineItem() ? (
-                <div className="absolute inset-0 w-full h-full" style={{ zIndex: 2 }}>
+                <div className="absolute inset-0 w-full h-full" style={{ zIndex: timelineLayers.length + 100 }}>
                   <ComponentRenderer
                     component={getCurrentTimelineItem()!.component}
                     properties={componentProperties[getCurrentTimelineItem()!.component.id] || {}}
@@ -1657,13 +1815,32 @@ export default function ProjectEditor() {
                 </div>
               )}
             </div>
-                  {/* Layer indicator */}
-                  <div 
-                    className="absolute w-full h-1 bg-blue-400 opacity-30"
-                    style={{ 
-                      top: `${dragPreview.layer * 80 + 80}px` // Account for main component layer
-                    }}
-                  ></div>
+            {/* Layer indicator */}
+            <div 
+              className="absolute w-full h-1 bg-blue-400 opacity-30"
+              style={{
+                top: `${80 + (dragPreview.layer * 124) + 44}px` // Main layer (80px) + layer containers (124px each) + current layer header (44px)
+              }}
+            ></div>
+                </div>
+              )}
+              
+              {/* Drag Outline Preview */}
+              {dragOutline && (
+                <div
+                  className="absolute pointer-events-none z-30"
+                  style={{ 
+                    left: `${(dragOutline.time / totalDuration) * 100}%`,
+                    top: `${dragOutline.targetTop || (80 + (dragOutline.layer * 124) + 44)}px`,
+                    width: `${(dragOutline.width / (timelineRef.current?.getBoundingClientRect().width || 1)) * 100}%`,
+                    height: '64px'
+                  }}
+                >
+                  <div className="w-full h-full border-2 border-dashed border-blue-500 bg-blue-100 bg-opacity-30 rounded-lg flex items-center justify-center">
+                    <span className="text-xs text-blue-700 font-medium">
+                      {dragOutline.item.asset?.name || 'Media Item'}
+                    </span>
+                  </div>
                 </div>
               )}
               
@@ -1801,13 +1978,23 @@ export default function ProjectEditor() {
                       </svg>
                     </button>
                   </div>
-                  <div className="relative h-16">
+                  <div className="relative h-16" data-layer-content>
                     {layer.items.map((item: any) => (
                       <div
                         key={item.id}
                         draggable
                         onDragStart={(e) => handleMediaItemDragStart(e, item, layer.id)}
-                        className="absolute top-0 h-full rounded-lg p-3 cursor-move transition-colors bg-green-100 text-green-900 hover:bg-green-200"
+                        onClick={() => {
+                          setSelectedMediaItem(item);
+                          setSelectedTimelineItem(null);
+                          setShowComponentLibrary(false);
+                          setShowMediaLibrary(false);
+                        }}
+                        className={`absolute top-0 h-full rounded-lg p-3 cursor-move transition-colors ${
+                          selectedMediaItem?.id === item.id 
+                            ? 'bg-green-300 text-green-900' 
+                            : 'bg-green-100 text-green-900 hover:bg-green-200'
+                        }`}
                         style={{
                           left: `${(item.start_time / totalDuration) * 100}%`,
                           width: `${(item.duration / totalDuration) * 100}%`,
@@ -1852,7 +2039,7 @@ export default function ProjectEditor() {
         </div>
 
         {/* Component Library & Properties Sidebar */}
-        <div className="w-80 border-l border-gray-200 overflow-y-auto bg-white">
+        <div className="w-96 border-l border-gray-200 overflow-y-auto bg-white">
           <div className="p-6">
             {/* Toggle between Component Library, Media Library and Properties */}
             <div className="flex mb-4 border-b border-gray-200">
@@ -2097,10 +2284,280 @@ export default function ProjectEditor() {
                   </button>
                 </div>
               </div>
+            ) : selectedMediaItem ? (
+              // Media Properties Panel
+              <div>
+                <h3 className="text-lg font-medium text-gray-900 mb-4">
+                  {selectedMediaItem.asset.name} Properties
+                </h3>
+                
+                <div className="space-y-4">
+                  {/* Media Properties */}
+                  <div className="border-b border-gray-200 pb-4">
+                    <h4 className="text-sm font-medium text-gray-700 mb-3">Media Settings</h4>
+                    <div className="space-y-4">
+                      {/* Scale */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Scale
+                        </label>
+                        <div className="flex items-center space-x-3">
+                          <input
+                            type="range"
+                            min="0.1"
+                            max="5"
+                            step="0.1"
+                            value={mediaProperties[selectedMediaItem.id]?.scale || 1}
+                            onChange={(e) => {
+                              const value = parseFloat(e.target.value);
+                              setMediaProperties(prev => ({
+                                ...prev,
+                                [selectedMediaItem.id]: {
+                                  ...prev[selectedMediaItem.id],
+                                  scale: value
+                                }
+                              }));
+                            }}
+                            className="flex-1"
+                          />
+                          <input
+                            type="number"
+                            min="0.1"
+                            max="5"
+                            step="0.1"
+                            value={mediaProperties[selectedMediaItem.id]?.scale || 1}
+                            onChange={(e) => {
+                              const value = Math.max(0.1, Math.min(5, parseFloat(e.target.value) || 1));
+                              setMediaProperties(prev => ({
+                                ...prev,
+                                [selectedMediaItem.id]: {
+                                  ...prev[selectedMediaItem.id],
+                                  scale: value
+                                }
+                              }));
+                            }}
+                            className="w-16 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          />
+                        </div>
+                        <div className="text-xs text-gray-500 text-center mt-1">
+                          {(mediaProperties[selectedMediaItem.id]?.scale || 1).toFixed(1)}x
+                        </div>
+                      </div>
+
+                      {/* Position X */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Position X
+                        </label>
+                        <div className="flex items-center space-x-3">
+                          <input
+                            type="range"
+                            min="-2000"
+                            max="2000"
+                            step="10"
+                            value={mediaProperties[selectedMediaItem.id]?.x || 0}
+                            onChange={(e) => {
+                              const value = parseInt(e.target.value);
+                              setMediaProperties(prev => ({
+                                ...prev,
+                                [selectedMediaItem.id]: {
+                                  ...prev[selectedMediaItem.id],
+                                  x: value
+                                }
+                              }));
+                            }}
+                            className="flex-1"
+                          />
+                          <input
+                            type="number"
+                            min="-2000"
+                            max="2000"
+                            step="1"
+                            value={mediaProperties[selectedMediaItem.id]?.x || 0}
+                            onChange={(e) => {
+                              const value = Math.max(-2000, Math.min(2000, parseInt(e.target.value) || 0));
+                              setMediaProperties(prev => ({
+                                ...prev,
+                                [selectedMediaItem.id]: {
+                                  ...prev[selectedMediaItem.id],
+                                  x: value
+                                }
+                              }));
+                            }}
+                            className="w-20 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          />
+                        </div>
+                        <div className="text-xs text-gray-500 text-center mt-1">
+                          {mediaProperties[selectedMediaItem.id]?.x || 0}px
+                        </div>
+                      </div>
+
+                      {/* Position Y */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Position Y
+                        </label>
+                        <div className="flex items-center space-x-3">
+                          <input
+                            type="range"
+                            min="-2000"
+                            max="2000"
+                            step="10"
+                            value={mediaProperties[selectedMediaItem.id]?.y || 0}
+                            onChange={(e) => {
+                              const value = parseInt(e.target.value);
+                              setMediaProperties(prev => ({
+                                ...prev,
+                                [selectedMediaItem.id]: {
+                                  ...prev[selectedMediaItem.id],
+                                  y: value
+                                }
+                              }));
+                            }}
+                            className="flex-1"
+                          />
+                          <input
+                            type="number"
+                            min="-2000"
+                            max="2000"
+                            step="1"
+                            value={mediaProperties[selectedMediaItem.id]?.y || 0}
+                            onChange={(e) => {
+                              const value = Math.max(-2000, Math.min(2000, parseInt(e.target.value) || 0));
+                              setMediaProperties(prev => ({
+                                ...prev,
+                                [selectedMediaItem.id]: {
+                                  ...prev[selectedMediaItem.id],
+                                  y: value
+                                }
+                              }));
+                            }}
+                            className="w-20 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          />
+                        </div>
+                        <div className="text-xs text-gray-500 text-center mt-1">
+                          {mediaProperties[selectedMediaItem.id]?.y || 0}px
+                        </div>
+                      </div>
+
+                      {/* Opacity */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Opacity
+                        </label>
+                        <div className="flex items-center space-x-3">
+                          <input
+                            type="range"
+                            min="0"
+                            max="1"
+                            step="0.01"
+                            value={mediaProperties[selectedMediaItem.id]?.opacity || 1}
+                            onChange={(e) => {
+                              const value = parseFloat(e.target.value);
+                              setMediaProperties(prev => ({
+                                ...prev,
+                                [selectedMediaItem.id]: {
+                                  ...prev[selectedMediaItem.id],
+                                  opacity: value
+                                }
+                              }));
+                            }}
+                            className="flex-1"
+                          />
+                          <input
+                            type="number"
+                            min="0"
+                            max="1"
+                            step="0.01"
+                            value={mediaProperties[selectedMediaItem.id]?.opacity || 1}
+                            onChange={(e) => {
+                              const value = Math.max(0, Math.min(1, parseFloat(e.target.value) || 1));
+                              setMediaProperties(prev => ({
+                                ...prev,
+                                [selectedMediaItem.id]: {
+                                  ...prev[selectedMediaItem.id],
+                                  opacity: value
+                                }
+                              }));
+                            }}
+                            className="w-16 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          />
+                        </div>
+                        <div className="text-xs text-gray-500 text-center mt-1">
+                          {Math.round((mediaProperties[selectedMediaItem.id]?.opacity || 1) * 100)}%
+                        </div>
+                      </div>
+
+                      {/* Rotation */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Rotation
+                        </label>
+                        <div className="flex items-center space-x-3">
+                          <input
+                            type="range"
+                            min="-360"
+                            max="360"
+                            step="1"
+                            value={mediaProperties[selectedMediaItem.id]?.rotation || 0}
+                            onChange={(e) => {
+                              const value = parseInt(e.target.value);
+                              setMediaProperties(prev => ({
+                                ...prev,
+                                [selectedMediaItem.id]: {
+                                  ...prev[selectedMediaItem.id],
+                                  rotation: value
+                                }
+                              }));
+                            }}
+                            className="flex-1"
+                          />
+                          <input
+                            type="number"
+                            min="-360"
+                            max="360"
+                            step="1"
+                            value={mediaProperties[selectedMediaItem.id]?.rotation || 0}
+                            onChange={(e) => {
+                              const value = Math.max(-360, Math.min(360, parseInt(e.target.value) || 0));
+                              setMediaProperties(prev => ({
+                                ...prev,
+                                [selectedMediaItem.id]: {
+                                  ...prev[selectedMediaItem.id],
+                                  rotation: value
+                                }
+                              }));
+                            }}
+                            className="w-20 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          />
+                        </div>
+                        <div className="text-xs text-gray-500 text-center mt-1">
+                          {mediaProperties[selectedMediaItem.id]?.rotation || 0}°
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      // Remove media item from timeline
+                      setTimelineLayers(prev => prev.map(layer => ({
+                        ...layer,
+                        items: layer.items.filter(item => item.id !== selectedMediaItem.id)
+                      })));
+                      setSelectedMediaItem(null);
+                    }}
+                    className="w-full flex items-center justify-center px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+                  >
+                    <TrashIcon className="h-4 w-4 mr-2" />
+                    Remove from Timeline
+                  </button>
+                </div>
+              </div>
             ) : (
               // No selection
               <div className="text-center text-gray-500 py-8">
-                <p>Select a component from the timeline to edit its properties</p>
+                <p>Select a component or media item from the timeline to edit its properties</p>
               </div>
             )}
           </div>
