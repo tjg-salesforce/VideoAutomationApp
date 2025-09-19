@@ -35,10 +35,22 @@ function VideoTimelineControl({
     
     if (currentTime >= startTime && currentTime <= videoEndTime) {
       const videoProgress = (currentTime - startTime) / duration;
-      const targetTime = videoProgress * video.duration;
       
-      if (isFinite(targetTime) && targetTime >= 0 && targetTime <= video.duration) {
-        video.currentTime = targetTime;
+      // If the timeline duration is longer than the video duration, hold the last frame
+      if (duration > video.duration) {
+        const videoProgress = Math.min(1, (currentTime - startTime) / video.duration);
+        const targetTime = videoProgress * video.duration;
+        
+        if (isFinite(targetTime) && targetTime >= 0 && targetTime <= video.duration) {
+          video.currentTime = targetTime;
+        }
+      } else {
+        // Normal playback for videos that fit within the timeline duration
+        const targetTime = videoProgress * video.duration;
+        
+        if (isFinite(targetTime) && targetTime >= 0 && targetTime <= video.duration) {
+          video.currentTime = targetTime;
+        }
       }
     }
   }, [currentTime, startTime, duration]);
@@ -472,6 +484,79 @@ export default function ProjectEditor() {
     e.target.value = '';
   };
 
+  // Helper function to find the next available time slot in a layer
+  const findNextAvailableTime = (layerItems: any[], preferredStartTime: number, duration: number) => {
+    if (layerItems.length === 0) return preferredStartTime;
+    
+    // Sort items by start time
+    const sortedItems = [...layerItems].sort((a, b) => a.start_time - b.start_time);
+    
+    // Check if preferred time is available
+    const isOverlap = sortedItems.some(item => 
+      preferredStartTime < item.start_time + item.duration && 
+      preferredStartTime + duration > item.start_time
+    );
+    
+    if (!isOverlap) return preferredStartTime;
+    
+    // Find the next available slot by placing after the last item
+    const lastItem = sortedItems[sortedItems.length - 1];
+    return lastItem.start_time + lastItem.duration;
+  };
+
+  // Handle media item resizing (extension)
+  const handleMediaResize = (e: React.MouseEvent, item: any, layerId: string, direction: 'start' | 'end') => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const startX = e.clientX;
+    const timelineRect = timelineRef.current?.getBoundingClientRect();
+    if (!timelineRect) return;
+    
+    const timePerPixel = totalDuration / timelineRect.width;
+    const startTime = item.start_time;
+    const startDuration = item.duration;
+    
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const deltaX = moveEvent.clientX - startX;
+      const deltaTime = deltaX * timePerPixel;
+      
+      let newDuration = startDuration;
+      let newStartTime = startTime;
+      
+      if (direction === 'end') {
+        // Extending the end
+        newDuration = Math.max(1, startDuration + deltaTime); // Minimum 1 second
+      } else {
+        // Extending the start (moving start time earlier)
+        newStartTime = Math.max(0, startTime - deltaTime);
+        newDuration = Math.max(1, startDuration + deltaTime);
+      }
+      
+      // Update the item in the timeline
+      setTimelineLayers(prev => prev.map(layer => 
+        layer.id === layerId 
+          ? {
+              ...layer,
+              items: layer.items.map(mediaItem => 
+                mediaItem.id === item.id 
+                  ? { ...mediaItem, start_time: newStartTime, duration: newDuration }
+                  : mediaItem
+              )
+            }
+          : layer
+      ));
+    };
+    
+    const handleMouseUp = () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+    
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  };
+
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     
@@ -537,11 +622,16 @@ export default function ProjectEditor() {
       if (layerIndex < timelineLayers.length) {
         // Add to existing layer
         const targetLayer = timelineLayers[layerIndex];
+        const duration = draggedMediaAsset.duration || 5;
+        
+        // Find next available time slot to prevent overlaps
+        const adjustedStartTime = findNextAvailableTime(targetLayer.items, startTime, duration);
+        
         const newMediaItem = {
           id: `media_${Date.now()}`,
           asset: draggedMediaAsset,
-          start_time: startTime,
-          duration: draggedMediaAsset.duration || 5, // Use asset duration or default to 5s
+          start_time: adjustedStartTime,
+          duration: duration,
           layerId: targetLayer.id
         };
         
@@ -1621,14 +1711,26 @@ export default function ProjectEditor() {
                         }}
                       >
                       {mediaItem.asset.type === 'video' ? (
-                          <VideoTimelineControl
-                          src={mediaItem.asset.data}
-                          startTime={mediaItem.start_time}
-                          duration={mediaItem.duration}
-                            currentTime={currentTime}
-                            isPlaying={isPlaying}
-                            className="w-full h-full object-contain rounded-lg"
-                          />
+                          <div className="relative w-full h-full">
+                            <VideoTimelineControl
+                              src={mediaItem.asset.data}
+                              startTime={mediaItem.start_time}
+                              duration={mediaItem.duration}
+                              currentTime={currentTime}
+                              isPlaying={isPlaying}
+                              className="w-full h-full object-contain rounded-lg"
+                            />
+                            {/* Extension marker - show when video is extended beyond original duration */}
+                            {mediaItem.asset.duration && mediaItem.duration > mediaItem.asset.duration && (
+                              <div 
+                                className="absolute top-0 bottom-0 w-0.5 bg-yellow-400 opacity-80"
+                                style={{
+                                  left: `${(mediaItem.asset.duration / mediaItem.duration) * 100}%`
+                                }}
+                                title="End of original video - extension begins here"
+                              />
+                            )}
+                          </div>
                         ) : (
                           <img
                           src={mediaItem.asset.data}
@@ -1990,7 +2092,7 @@ export default function ProjectEditor() {
                           setShowComponentLibrary(false);
                           setShowMediaLibrary(false);
                         }}
-                        className={`absolute top-0 h-full rounded-lg p-3 cursor-move transition-colors ${
+                        className={`absolute top-0 h-full rounded-lg p-3 cursor-move transition-colors group ${
                           selectedMediaItem?.id === item.id 
                             ? 'bg-green-300 text-green-900' 
                             : 'bg-green-100 text-green-900 hover:bg-green-200'
@@ -2005,6 +2107,28 @@ export default function ProjectEditor() {
                         <div className="text-xs opacity-75">
                           {formatTime(item.start_time)} - {formatTime(item.start_time + item.duration)}
                         </div>
+                        
+                        {/* Video end marker - show where original video ends if extended */}
+                        {item.asset.type === 'video' && item.asset.duration && item.duration > item.asset.duration && (
+                          <div 
+                            className="absolute top-0 bottom-0 w-0.5 bg-yellow-400 border-l border-yellow-500"
+                            style={{
+                              left: `${(item.asset.duration / item.duration) * 100}%`
+                            }}
+                            title={`Original video ends at ${formatTime(item.start_time + item.asset.duration)}`}
+                          />
+                        )}
+                        
+                        {/* Extension handle for images and videos */}
+                        {(item.asset.type === 'image' || item.asset.type === 'video') && (
+                          <div
+                            className="absolute right-0 top-0 w-2 h-full bg-blue-500 opacity-0 group-hover:opacity-100 cursor-ew-resize transition-opacity hover:bg-blue-600"
+                            onMouseDown={(e) => handleMediaResize(e, item, layer.id, 'end')}
+                            title="Drag to extend duration"
+                          >
+                            <div className="absolute right-0 top-1/2 transform -translate-y-1/2 w-1 h-4 bg-white rounded-sm opacity-50" />
+                          </div>
+                        )}
                       </div>
                     ))}
                     {layer.items.length === 0 && (
