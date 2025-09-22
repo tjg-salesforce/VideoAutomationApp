@@ -99,7 +99,7 @@ const ComponentPropertiesPanel: React.FC<ComponentPropertiesPanelProps> = ({
                 className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
               />
               <span className="text-sm font-medium text-gray-700 min-w-[3rem] text-right">
-                {((value || property.defaultValue || 0) * 100).toFixed(0)}%
+                {(value || property.defaultValue || 0).toFixed(1)}
               </span>
             </div>
           </div>

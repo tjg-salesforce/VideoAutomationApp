@@ -4,7 +4,7 @@
 export interface ComponentProperty {
   id: string;
   name: string;
-  type: 'text' | 'number' | 'color' | 'file' | 'select' | 'textarea' | 'boolean' | 'array';
+  type: 'text' | 'number' | 'color' | 'file' | 'select' | 'textarea' | 'boolean' | 'array' | 'range';
   label: string;
   description?: string;
   required?: boolean;
@@ -63,7 +63,7 @@ export const componentSchemas: Record<string, ComponentSchema> = {
       {
         id: 'logoScale',
         name: 'logoScale',
-        type: 'number',
+        type: 'range',
         label: 'Logo Scale',
         description: 'Scale factor for the logo',
         min: 0.1,
