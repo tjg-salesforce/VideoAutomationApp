@@ -192,11 +192,11 @@ const SimplePhone: React.FC<SimplePhoneProps> = ({
               height: `${50 * scale}px`, // Original profile pic size scaled
               borderRadius: '50%',
               overflow: 'hidden',
-              border: `${2 * scale}px solid white`, // Original border scaled
+              // border: `${2 * scale}px solid white`, // Removed white border
               boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
             }}>
               <img 
-                src={`https://placehold.co/100x100/146A34/white?text=${agentName.charAt(0)}`} 
+                src={`https://placehold.co/100x100/9ca3af/white?text=${agentName.charAt(0)}`} 
                 alt={`${agentName} Profile`}
                 style={{ width: '100%', height: '100%', objectFit: 'cover' }}
               />

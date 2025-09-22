@@ -81,7 +81,7 @@ const iPhoneSMSCSS: React.FC<iPhoneSMSCSSProps> = ({
             </span>
             <div className="header-content">
               <div className="profile-pic-container">
-                <img className="profile-pic" src="https://placehold.co/100x100/146A34/white?text=W" alt={`${agentName} Profile`} />
+                <img className="profile-pic" src={`https://placehold.co/100x100/9ca3af/white?text=${agentName.charAt(0)}`} alt={`${agentName} Profile`} />
               </div>
               <div className="name-container">
                 <span className="contact-name">{agentName}</span>
