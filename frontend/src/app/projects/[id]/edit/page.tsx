@@ -1899,22 +1899,6 @@ export default function ProjectEditor() {
               </div>
             </div>
 
-            {/* Time Markers */}
-            <div className="relative h-8 mb-2 border-b border-gray-200">
-              {generateTimeMarkers().map((marker) => (
-                <div
-                  key={marker.time}
-                  className="absolute top-0 h-full flex flex-col items-center"
-                  style={{ left: `${marker.position}%` }}
-                >
-                  <div className={`w-px h-4 ${marker.isMinute ? 'bg-gray-600' : 'bg-gray-300'}`}></div>
-                  <div className={`text-xs mt-1 ${marker.isMinute ? 'text-gray-700 font-medium' : 'text-gray-500'}`}>
-                    {marker.label}
-                  </div>
-                </div>
-              ))}
-            </div>
-
             {/* Timeline Tracks */}
             <div
               ref={timelineRef}
@@ -1922,45 +1906,6 @@ export default function ProjectEditor() {
               onDragOver={handleDragOver}
               onDrop={handleDrop}
             >
-              {/* Vertical Indicator Line for Current Time */}
-              <div
-                className="absolute top-0 bottom-0 w-0.5 bg-red-500 pointer-events-none z-10"
-                style={{
-                  left: `${(currentTime / totalDuration) * 100}%`,
-                  transform: 'translateX(-50%)'
-                }}
-              >
-                <div className="absolute -top-1 -left-1 w-3 h-3 bg-red-500 rounded-full"></div>
-                  </div>
-              
-              {/* Drag Preview Indicator */}
-              {dragPreview && (
-                <div
-                  className="absolute top-0 bottom-0 w-0.5 bg-blue-400 pointer-events-none z-20 opacity-60"
-                  style={{
-                    left: `${(dragPreview.time / totalDuration) * 100}%`,
-                    transform: 'translateX(-50%)'
-                  }}
-                >
-                  <div className="absolute -top-1 -left-1 w-3 h-3 bg-blue-400 rounded-full"></div>
-                  <div className="absolute top-2 -left-8 text-xs bg-blue-400 text-white px-1 rounded whitespace-nowrap">
-                    {formatTime(dragPreview.time)}
-                    {dragPreview.snapTarget && (
-                      <div className="text-xs text-blue-100 mt-1">
-                        {dragPreview.snapTarget}
-                </div>
-              )}
-            </div>
-            {/* Layer indicator */}
-            <div 
-              className="absolute w-full h-1 bg-blue-400 opacity-30"
-              style={{
-                top: `${80 + (dragPreview.layer * 124) + 44}px` // Main layer (80px) + layer containers (124px each) + current layer header (44px)
-              }}
-            ></div>
-                </div>
-              )}
-              
               {/* Drag Outline Preview */}
               {dragOutline && (
                 <div
@@ -1983,10 +1928,57 @@ export default function ProjectEditor() {
               {/* Timeline Content with Zoom Scaling */}
               <div 
               style={{ 
-                  transform: `scaleX(${timelineZoom})`,
-                  transformOrigin: 'left center'
-                }}
+                width: `${100 * timelineZoom}%`,
+                minWidth: '100%'
+              }}
               >
+                {/* Time Markers */}
+                <div className="relative h-8 mb-2 border-b border-gray-200">
+                  {generateTimeMarkers().map((marker) => (
+                    <div
+                      key={marker.time}
+                      className="absolute top-0 h-full flex flex-col items-center"
+                      style={{ left: `${marker.position}%` }}
+                    >
+                      <div className={`w-px h-4 ${marker.isMinute ? 'bg-gray-600' : 'bg-gray-300'}`}></div>
+                      <div className={`text-xs mt-1 ${marker.isMinute ? 'text-gray-700 font-medium' : 'text-gray-500'}`}>
+                        {marker.label}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Vertical Indicator Line for Current Time */}
+                <div
+                  className="absolute top-0 bottom-0 w-0.5 bg-red-500 pointer-events-none z-10"
+                  style={{
+                    left: `${(currentTime / totalDuration) * 100 * timelineZoom}%`,
+                    transform: 'translateX(-50%)'
+                  }}
+                >
+                </div>
+
+                {/* Drag Preview Indicator */}
+                {dragPreview && (
+                  <div
+                    className="absolute top-0 bottom-0 w-0.5 bg-blue-400 pointer-events-none z-20 opacity-60"
+                    style={{
+                      left: `${(dragPreview.time / totalDuration) * 100 * timelineZoom}%`,
+                      transform: 'translateX(-50%)'
+                    }}
+                  >
+                    <div className="absolute -top-1 -left-1 w-3 h-3 bg-blue-400 rounded-full"></div>
+                    <div className="absolute top-2 -left-8 text-xs bg-blue-400 text-white px-1 rounded whitespace-nowrap">
+                      {formatTime(dragPreview.time)}
+                      {dragPreview.snapTarget && (
+                        <div className="text-xs text-blue-100 mt-1">
+                          {dragPreview.snapTarget}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 {/* Main Component Layer */}
                 <div className="mb-4">
                 <div className="flex items-center mb-2">

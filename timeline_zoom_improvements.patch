@@ -1,0 +1,325 @@
+From 08b73e3c5bc334ec67140b6516df06095b5b3ef1 Mon Sep 17 00:00:00 2001
+From: TJ Grossman <tgrossman+sfemu@salesforce.com>
+Date: Thu, 18 Sep 2025 02:15:09 -0700
+Subject: [PATCH 1/2] Add timeline zoom controls and fix save functionality
+
+- Add timeline zoom controls (25% to 400%) with visual feedback
+- Implement adaptive time markers based on zoom level (1s intervals when zoomed in)
+- Add keyboard shortcuts: +/- for zoom, 0 for reset
+- Fix save error by storing media assets and timeline layers in settings field
+- Add timeline zoom persistence in project settings
+- Improve timeline precision with horizontal scaling
+- Add tooltips for zoom controls showing keyboard shortcuts
+- Ensure proper data structure for backend compatibility
+---
+ frontend/src/app/projects/[id]/edit/page.tsx | 99 ++++++++++++++++++--
+ 1 file changed, 90 insertions(+), 9 deletions(-)
+
+diff --git a/frontend/src/app/projects/[id]/edit/page.tsx b/frontend/src/app/projects/[id]/edit/page.tsx
+index 2aa6873..6f19eea 100644
+--- a/frontend/src/app/projects/[id]/edit/page.tsx
++++ b/frontend/src/app/projects/[id]/edit/page.tsx
+@@ -28,6 +28,7 @@ export default function ProjectEditor() {
+   const [draggedLayer, setDraggedLayer] = useState<any>(null);
+   const [draggedTimelineItem, setDraggedTimelineItem] = useState<any>(null);
+   const [draggedMediaItem, setDraggedMediaItem] = useState<any>(null);
++  const [timelineZoom, setTimelineZoom] = useState(1); // 1 = normal, 2 = 2x zoom, 0.5 = half zoom
+   const [showComponentLibrary, setShowComponentLibrary] = useState(true);
+   const [showMediaLibrary, setShowMediaLibrary] = useState(false);
+   const [isRendering, setIsRendering] = useState(false);
+@@ -81,6 +82,30 @@ export default function ProjectEditor() {
+     calculateTotalDuration(timeline);
+   }, [timelineLayers]);
+ 
++  // Keyboard shortcuts for timeline control
++  useEffect(() => {
++    const handleKeyDown = (e: KeyboardEvent) => {
++      // Only handle shortcuts when not typing in input fields
++      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
++        return;
++      }
++
++      if (e.key === '=' || e.key === '+') {
++        e.preventDefault();
++        setTimelineZoom(Math.min(4, timelineZoom + 0.25));
++      } else if (e.key === '-') {
++        e.preventDefault();
++        setTimelineZoom(Math.max(0.25, timelineZoom - 0.25));
++      } else if (e.key === '0') {
++        e.preventDefault();
++        setTimelineZoom(1);
++      }
++    };
++
++    window.addEventListener('keydown', handleKeyDown);
++    return () => window.removeEventListener('keydown', handleKeyDown);
++  }, [timelineZoom]);
++
+   const loadProject = async () => {
+     try {
+       const response = await apiEndpoints.getProject(projectId);
+@@ -101,12 +126,17 @@ export default function ProjectEditor() {
+         setComponentProperties(properties);
+       }
+ 
+-      // Restore media assets and timeline layers if they exist
+-      if (projectData.mediaAssets) {
+-        setMediaAssets(projectData.mediaAssets);
+-      }
+-      if (projectData.timelineLayers) {
+-        setTimelineLayers(projectData.timelineLayers);
++      // Restore media assets, timeline layers, and zoom from settings if they exist
++      if (projectData.settings) {
++        if (projectData.settings.mediaAssets) {
++          setMediaAssets(projectData.settings.mediaAssets);
++        }
++        if (projectData.settings.timelineLayers) {
++          setTimelineLayers(projectData.settings.timelineLayers);
++        }
++        if (projectData.settings.timelineZoom) {
++          setTimelineZoom(projectData.settings.timelineZoom);
++        }
+       }
+     } catch (error) {
+       console.error('Error loading project:', error);
+@@ -403,8 +433,11 @@ export default function ProjectEditor() {
+         name: project.name,
+         description: project.description,
+         timeline: timelineWithProperties,
+-        mediaAssets,
+-        timelineLayers,
++        settings: {
++          mediaAssets,
++          timelineLayers,
++          timelineZoom
++        },
+         status: 'in_progress'
+       };
+       
+@@ -429,7 +462,15 @@ export default function ProjectEditor() {
+ 
+   const generateTimeMarkers = () => {
+     const markers = [];
+-    const interval = totalDuration > 60 ? 10 : 5; // 10s intervals for long videos, 5s for short
++    // Adjust interval based on zoom level - more granular when zoomed in
++    let interval = totalDuration > 60 ? 10 : 5;
++    if (timelineZoom >= 2) {
++      interval = 1; // 1 second intervals when zoomed in
++    } else if (timelineZoom >= 1.5) {
++      interval = 2; // 2 second intervals
++    } else if (timelineZoom <= 0.5) {
++      interval = totalDuration > 60 ? 30 : 15; // Larger intervals when zoomed out
++    }
+     
+     for (let i = 0; i <= totalDuration; i += interval) {
+       const isMinute = i % 60 === 0 && i > 0;
+@@ -1369,6 +1410,42 @@ export default function ProjectEditor() {
+               />
+             </div>
+ 
++            {/* Timeline Controls */}
++            <div className="flex items-center justify-between mb-2">
++              <div className="flex items-center space-x-2">
++                <span className="text-sm text-gray-600">Zoom:</span>
++                <button
++                  onClick={() => setTimelineZoom(Math.max(0.25, timelineZoom - 0.25))}
++                  className="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded"
++                  disabled={timelineZoom <= 0.25}
++                  title="Zoom out (- key)"
++                >
++                  -
++                </button>
++                <span className="text-sm text-gray-700 min-w-12 text-center">
++                  {Math.round(timelineZoom * 100)}%
++                </span>
++                <button
++                  onClick={() => setTimelineZoom(Math.min(4, timelineZoom + 0.25))}
++                  className="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded"
++                  disabled={timelineZoom >= 4}
++                  title="Zoom in (+ key)"
++                >
++                  +
++                </button>
++                <button
++                  onClick={() => setTimelineZoom(1)}
++                  className="px-2 py-1 text-xs bg-blue-100 hover:bg-blue-200 text-blue-700 rounded"
++                  title="Reset zoom (0 key)"
++                >
++                  Reset
++                </button>
++              </div>
++              <div className="text-sm text-gray-500">
++                Duration: {formatTime(totalDuration)}
++              </div>
++            </div>
++
+             {/* Time Markers */}
+             <div className="relative h-8 mb-2 border-b border-gray-200">
+               {generateTimeMarkers().map((marker) => (
+@@ -1391,6 +1468,10 @@ export default function ProjectEditor() {
+               className="border-2 border-dashed border-gray-300 rounded-lg p-4 overflow-x-auto"
+               onDragOver={handleDragOver}
+               onDrop={handleDrop}
++              style={{ 
++                transform: `scaleX(${timelineZoom})`,
++                transformOrigin: 'left center'
++              }}
+             >
+               {/* Main Component Layer */}
+               <div className="mb-4">
+-- 
+2.39.5 (Apple Git-154)
+
+
+From e68a3006ce108a468fbed96f9a65a4af19a8789d Mon Sep 17 00:00:00 2001
+From: TJ Grossman <tgrossman+sfemu@salesforce.com>
+Date: Thu, 18 Sep 2025 02:18:01 -0700
+Subject: [PATCH 2/2] Improve timeline zoom with slider and proper scaling
+
+- Replace zoom buttons with a smooth slider control (25% to 400%)
+- Fix zoom to only affect timeline width, not stretch content/labels
+- Remove transform scaling that distorted media asset labels
+- Add proper slider styling with blue theme and hover effects
+- Enable much finer horizontal movement when zoomed in
+- Maintain keyboard shortcuts (+/- for zoom, 0 for reset)
+- Timeline now expands horizontally for precise positioning
+- Media asset labels remain crisp and readable at all zoom levels
+---
+ frontend/src/app/globals.css                 | 48 ++++++++++++++++++++
+ frontend/src/app/projects/[id]/edit/page.tsx | 42 ++++++++---------
+ 2 files changed, 68 insertions(+), 22 deletions(-)
+
+diff --git a/frontend/src/app/globals.css b/frontend/src/app/globals.css
+index a2dc41e..c90cf76 100644
+--- a/frontend/src/app/globals.css
++++ b/frontend/src/app/globals.css
+@@ -24,3 +24,51 @@ body {
+   color: var(--foreground);
+   font-family: Arial, Helvetica, sans-serif;
+ }
++
++/* Timeline zoom slider styling */
++.slider {
++  -webkit-appearance: none;
++  appearance: none;
++  background: transparent;
++  cursor: pointer;
++}
++
++.slider::-webkit-slider-track {
++  background: #e5e7eb;
++  height: 8px;
++  border-radius: 4px;
++}
++
++.slider::-webkit-slider-thumb {
++  -webkit-appearance: none;
++  appearance: none;
++  background: #3b82f6;
++  height: 16px;
++  width: 16px;
++  border-radius: 50%;
++  cursor: pointer;
++}
++
++.slider::-webkit-slider-thumb:hover {
++  background: #2563eb;
++}
++
++.slider::-moz-range-track {
++  background: #e5e7eb;
++  height: 8px;
++  border-radius: 4px;
++  border: none;
++}
++
++.slider::-moz-range-thumb {
++  background: #3b82f6;
++  height: 16px;
++  width: 16px;
++  border-radius: 50%;
++  cursor: pointer;
++  border: none;
++}
++
++.slider::-moz-range-thumb:hover {
++  background: #2563eb;
++}
+diff --git a/frontend/src/app/projects/[id]/edit/page.tsx b/frontend/src/app/projects/[id]/edit/page.tsx
+index 6f19eea..0078072 100644
+--- a/frontend/src/app/projects/[id]/edit/page.tsx
++++ b/frontend/src/app/projects/[id]/edit/page.tsx
+@@ -357,6 +357,7 @@ export default function ProjectEditor() {
+       const timelineRect = e.currentTarget.getBoundingClientRect();
+       const x = e.clientX - timelineRect.left;
+       const timelineWidth = timelineRect.width;
++      // Account for zoom level in position calculation
+       const newStartTime = (x / timelineWidth) * totalDuration;
+       
+       // Ensure the item doesn't go negative or extend beyond total duration
+@@ -374,6 +375,7 @@ export default function ProjectEditor() {
+       const timelineRect = e.currentTarget.getBoundingClientRect();
+       const x = e.clientX - timelineRect.left;
+       const timelineWidth = timelineRect.width;
++      // Account for zoom level in position calculation
+       const newStartTime = (x / timelineWidth) * totalDuration;
+       
+       // Ensure the item doesn't go negative or extend beyond total duration
+@@ -1412,27 +1414,23 @@ export default function ProjectEditor() {
+ 
+             {/* Timeline Controls */}
+             <div className="flex items-center justify-between mb-2">
+-              <div className="flex items-center space-x-2">
++              <div className="flex items-center space-x-3">
+                 <span className="text-sm text-gray-600">Zoom:</span>
+-                <button
+-                  onClick={() => setTimelineZoom(Math.max(0.25, timelineZoom - 0.25))}
+-                  className="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded"
+-                  disabled={timelineZoom <= 0.25}
+-                  title="Zoom out (- key)"
+-                >
+-                  -
+-                </button>
+-                <span className="text-sm text-gray-700 min-w-12 text-center">
+-                  {Math.round(timelineZoom * 100)}%
+-                </span>
+-                <button
+-                  onClick={() => setTimelineZoom(Math.min(4, timelineZoom + 0.25))}
+-                  className="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded"
+-                  disabled={timelineZoom >= 4}
+-                  title="Zoom in (+ key)"
+-                >
+-                  +
+-                </button>
++                <div className="flex items-center space-x-2">
++                  <input
++                    type="range"
++                    min="0.25"
++                    max="4"
++                    step="0.25"
++                    value={timelineZoom}
++                    onChange={(e) => setTimelineZoom(parseFloat(e.target.value))}
++                    className="w-24 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider"
++                    title="Timeline zoom level"
++                  />
++                  <span className="text-sm text-gray-700 min-w-12 text-center">
++                    {Math.round(timelineZoom * 100)}%
++                  </span>
++                </div>
+                 <button
+                   onClick={() => setTimelineZoom(1)}
+                   className="px-2 py-1 text-xs bg-blue-100 hover:bg-blue-200 text-blue-700 rounded"
+@@ -1469,8 +1467,8 @@ export default function ProjectEditor() {
+               onDragOver={handleDragOver}
+               onDrop={handleDrop}
+               style={{ 
+-                transform: `scaleX(${timelineZoom})`,
+-                transformOrigin: 'left center'
++                width: `${100 * timelineZoom}%`,
++                minWidth: '100%'
+               }}
+             >
+               {/* Main Component Layer */}
+-- 
+2.39.5 (Apple Git-154)
+
