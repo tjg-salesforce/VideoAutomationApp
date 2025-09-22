@@ -1,3 +1,5 @@
+import { TimelineTab, TimelineGroup } from './timeline';
+
 export interface Project {
   id: string;
   name: string;
@@ -9,6 +11,11 @@ export interface Project {
   created_by?: string;
   metadata?: Record<string, any>;
   timeline?: TimelineItem[];
+  
+  // New tabbed timeline system
+  timelineTabs?: TimelineTab[];
+  activeTabId?: string;
+  groups?: TimelineGroup[];
 }
 
 export interface TimelineItem {

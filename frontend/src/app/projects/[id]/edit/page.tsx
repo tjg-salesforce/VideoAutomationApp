@@ -8,6 +8,8 @@ import { apiEndpoints } from '@/lib/api';
 import ComponentRenderer from '@/components/ComponentRenderer';
 import { getComponentSchema, getDefaultProperties } from '@/lib/componentSchemas';
 import ComponentPropertiesPanel from '@/components/ComponentPropertiesPanel';
+import TimelineTabBar from '@/components/TimelineTabBar';
+import { useTimelineTabs } from '@/hooks/useTimelineTabs';
 import lottie from 'lottie-web';
 
 // Video component that responds to timeline controls
@@ -127,6 +129,21 @@ export default function ProjectEditor() {
   const [showMediaLibrary, setShowMediaLibrary] = useState(false);
   const [isRendering, setIsRendering] = useState(false);
   const [mediaAssets, setMediaAssets] = useState<any[]>([]);
+
+  // Timeline tab system
+  const {
+    tabs,
+    groups,
+    activeTabId,
+    activeTab,
+    switchTab,
+    closeTab,
+    renameTab,
+    createGroupTab,
+    createGroup,
+    updateTabItems,
+    updateTabLayers
+  } = useTimelineTabs();
   const [timelineLayers, setTimelineLayers] = useState<{
     id: string;
     name: string;

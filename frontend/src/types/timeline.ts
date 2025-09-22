@@ -3,7 +3,7 @@
 
 export interface TimelineItem {
   id: string;
-  type: 'component' | 'media' | 'effect' | 'text' | 'audio';
+  type: 'component' | 'media' | 'effect' | 'text' | 'audio' | 'group';
   assetType: string; // 'iphone_sms', 'video', 'image', 'customer_logo_split', etc.
   name: string;
   startTime: number;
@@ -33,6 +33,11 @@ export interface TimelineItem {
   locked?: boolean;
   visible?: boolean;
   muted?: boolean;
+  
+  // Grouping
+  groupId?: string; // Reference to parent group
+  isGroup?: boolean; // True if this item represents a group
+  groupItems?: string[]; // Array of TimelineItem IDs in this group
 }
 
 // Layer definition
@@ -54,4 +59,27 @@ export interface TimelineState {
   isPlaying: boolean;
   zoom: number;
   snapToGrid: boolean;
+}
+
+// Timeline Tab - represents a timeline view (main or group)
+export interface TimelineTab {
+  id: string;
+  name: string;
+  type: 'main' | 'group';
+  parentId?: string; // For group tabs, reference to the group item
+  items: TimelineItem[];
+  layers: TimelineLayer[];
+  isActive: boolean;
+}
+
+// Timeline Group - represents a grouped set of items
+export interface TimelineGroup {
+  id: string;
+  name: string;
+  items: string[]; // Array of TimelineItem IDs
+  startTime: number;
+  endTime: number;
+  color: string;
+  collapsed: boolean;
+  tabId?: string; // Reference to the tab if opened
 }
