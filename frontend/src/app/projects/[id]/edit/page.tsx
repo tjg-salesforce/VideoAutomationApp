@@ -1709,6 +1709,13 @@ export default function ProjectEditor() {
                           transform: `translate(${mediaProps.x}px, ${mediaProps.y}px) scale(${mediaProps.scale}) rotate(${mediaProps.rotation}deg)`,
                           opacity: mediaProps.opacity
                         }}
+                        onMouseEnter={() => console.log('Video transform applied:', {
+                          x: mediaProps.x,
+                          y: mediaProps.y,
+                          scale: mediaProps.scale,
+                          rotation: mediaProps.rotation,
+                          opacity: mediaProps.opacity
+                        })}
                       >
                       {mediaItem.asset.type === 'video' ? (
                           <div className="relative w-full h-full">
