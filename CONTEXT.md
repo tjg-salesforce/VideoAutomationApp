@@ -102,6 +102,7 @@ components (id, name, type, category, file_path, duration, created_at, updated_a
 - **Vertical Scrubber**: Red indicator line showing current playback position
 - **Drag/Drop Preview**: Blue preview line with snap target information
 - **Layer Management**: Multiple media layers with individual controls
+- **Tabbed Timeline System**: Main timeline + group sub-timelines (NEW)
 
 ### Smart Snapping System
 - **Snap Targets**: 
@@ -140,6 +141,42 @@ components (id, name, type, category, file_path, duration, created_at, updated_a
 - **State Management**: Comprehensive drag/drop state handling
 - **Error Handling**: Robust error handling for edge cases
 
+## 📱 IPHONE SMS COMPONENT (COMPLETED)
+
+### Enhanced User Experience
+- **Customer Text Colors**: Fixed white text on blue background for customer messages
+- **Placeholder System**: Removed confusing default messages, added helpful placeholder
+- **Properties Panel**: Fixed scrolling issues, moved "Add Message" button to bottom
+- **Auto-Alternating Senders**: New messages automatically alternate between customer/agent
+- **Pixel-Perfect Scaling**: All elements scale proportionally with component scale
+
+### Visual Improvements
+- **Agent Text Proportions**: 20% size reduction, removed bold styling for better balance
+- **Header Spacing**: Reduced whitespace by 50% for cleaner appearance
+- **Message Styling**: Proper iOS-style message bubbles with correct colors
+- **Component Scaling**: All elements (text, icons, spacing) scale together perfectly
+
+### Technical Features
+- **Component Registry**: iPhone SMS component registered with CSS renderer
+- **Property Schemas**: Complete schema for customer/agent names and messages
+- **Message Management**: Add/edit/delete messages with proper validation
+- **Timeline Integration**: Ready for sub-clip animation system
+
+## 🔧 TIMELINE TAB SYSTEM (IN PROGRESS)
+
+### Foundation Implemented
+- **TimelineTab Interface**: Support for main timeline and group sub-timelines
+- **TimelineGroup Interface**: Group management with collapsed/expanded states
+- **TimelineTabBar Component**: Tab bar with rename, close, and navigation
+- **useTimelineTabs Hook**: State management for tabs and groups
+- **Project Integration**: Updated Project interface to support tabbed timeline
+
+### Planned Features
+- **Group Creation**: Select multiple items and group them together
+- **Group Navigation**: Double-click groups to open in new timeline tab
+- **SMS Sub-clips**: Auto-generate message animation sub-clips
+- **Tab Management**: Rename tabs, close group tabs, switch between timelines
+
 ## File Structure
 ```
 /Users/tgrossman/Documents/Cursor/VideoAutomation/
@@ -175,14 +212,28 @@ components (id, name, type, category, file_path, duration, created_at, updated_a
     │   │   │   ├── CSSAnimationRenderer.tsx
     │   │   │   ├── HTMLRenderer.tsx
     │   │   │   └── HybridRenderer.tsx
+    │   │   ├── animations/    # Animation components
+    │   │   │   ├── iPhoneSMSCSS.tsx
+    │   │   │   ├── iPhoneSMSCSS.css
+    │   │   │   ├── SimplePhone.tsx
+    │   │   │   └── LogoSplitCSS.tsx
     │   │   ├── ProjectEditorModal.tsx
     │   │   ├── NewProjectModal.tsx
-    │   │   └── ComponentRenderer.tsx
+    │   │   ├── ComponentRenderer.tsx
+    │   │   ├── ComponentCreator.tsx
+    │   │   ├── ComponentPropertiesPanel.tsx
+    │   │   ├── TimelineTabBar.tsx
+    │   │   └── iPhoneSMSComponent.tsx
     │   ├── lib/
     │   │   ├── api.ts         # API client
-    │   │   └── componentRegistry.ts  # Component registry
+    │   │   ├── componentRegistry.ts  # Component registry
+    │   │   ├── componentSchemas.ts   # Component property schemas
+    │   │   └── assetRegistry.ts      # Asset management
+    │   ├── hooks/
+    │   │   └── useTimelineTabs.ts    # Timeline tab state management
     │   └── types/
-    │       └── index.ts       # TypeScript types
+    │       ├── index.ts       # TypeScript types
+    │       └── timeline.ts    # Timeline-specific types
     └── public/                # Static assets
 ```
 
@@ -246,12 +297,14 @@ curl https://video-automation-backend-7178f3c7577d.herokuapp.com/api/templates
 ```
 
 ## Next Steps for New Session
-1. **Immediate**: Test and refine timeline editor features
-2. **Then**: Implement video export functionality with CSS animations
-3. **Then**: Add more component types and animations
-4. **Then**: Implement SQS job queue for video rendering
-5. **Then**: Create basic FFmpeg rendering service
-6. **Then**: Add collaborative features (real-time editing, comments)
+1. **Immediate**: Integrate timeline tab bar into main timeline UI
+2. **Then**: Implement grouping functionality (select items, create groups)
+3. **Then**: Add SMS sub-clip animation system (message appear, typing, dictation)
+4. **Then**: Implement video export functionality with CSS animations
+5. **Then**: Add more component types and animations
+6. **Then**: Implement SQS job queue for video rendering
+7. **Then**: Create basic FFmpeg rendering service
+8. **Then**: Add collaborative features (real-time editing, comments)
 
 ## Important Notes
 - Backend is fully functional and deployed
