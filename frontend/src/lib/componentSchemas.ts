@@ -140,7 +140,7 @@ export const componentSchemas: Record<string, ComponentSchema> = {
                 { value: 'customer', label: 'Customer' },
                 { value: 'agent', label: 'Agent' }
               ],
-              defaultValue: 'customer'
+              defaultValue: 'agent'
             },
             {
               id: 'text',

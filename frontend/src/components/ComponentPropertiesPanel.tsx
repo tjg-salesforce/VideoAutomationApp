@@ -306,7 +306,7 @@ const ComponentPropertiesPanel: React.FC<ComponentPropertiesPanelProps> = ({
                   const currentArray = value || [];
                   
                   // Determine the next sender based on the last message
-                  let nextSender = 'customer'; // default
+                  let nextSender = 'agent'; // default - agent starts the conversation
                   if (currentArray.length > 0) {
                     const lastMessage = currentArray[currentArray.length - 1];
                     // If last message was from customer, next should be agent, and vice versa
