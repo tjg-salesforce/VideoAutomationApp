@@ -13,6 +13,7 @@ interface ComponentRendererProps {
   isPlaying: boolean;
   mode?: 'preview' | 'fullscreen';
   onPropertyChange?: (property: string, value: any) => void;
+  timelineItem?: any; // Timeline item with start_time, duration, etc.
 }
 
 // Loading fallback component
@@ -66,7 +67,8 @@ export default function ComponentRenderer({
   currentTime, 
   isPlaying, 
   mode = 'preview',
-  onPropertyChange 
+  onPropertyChange,
+  timelineItem
 }: ComponentRendererProps) {
   // Get the appropriate renderer from the registry
   const rendererConfig = useMemo(() => {
@@ -92,8 +94,9 @@ export default function ComponentRenderer({
     currentTime,
     isPlaying,
     mode,
-    onPropertyChange
-  }), [component, properties, currentTime, isPlaying, mode, onPropertyChange]);
+    onPropertyChange,
+    timelineItem
+  }), [component, properties, currentTime, isPlaying, mode, onPropertyChange, timelineItem]);
 
   // Render the component with error boundary and suspense
   return (

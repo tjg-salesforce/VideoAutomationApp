@@ -6,6 +6,8 @@ import { PlayIcon, PauseIcon, TrashIcon, ArrowLeftIcon, ArrowDownTrayIcon } from
 import { Project, Component, TimelineItem } from '@/types';
 import { apiEndpoints } from '@/lib/api';
 import ComponentRenderer from '@/components/ComponentRenderer';
+import { getComponentSchema, getDefaultProperties } from '@/lib/componentSchemas';
+import ComponentPropertiesPanel from '@/components/ComponentPropertiesPanel';
 import lottie from 'lottie-web';
 
 // Video component that responds to timeline controls
@@ -580,6 +582,7 @@ export default function ProjectEditor() {
     setDragOutline(null);
 
     if (draggedComponent) {
+      console.log('Dropping component:', draggedComponent);
       const layerHeight = 80;
       const targetLayer = Math.floor(y / layerHeight);
       
@@ -592,17 +595,17 @@ export default function ProjectEditor() {
         order: timeline.length
         };
 
-        // Set default properties for the component
+        // Set default properties for the component based on schema
+        const defaultProperties = getDefaultProperties(draggedComponent.type);
+        console.log('Default properties for', draggedComponent.type, ':', defaultProperties);
+        
         setComponentProperties(prev => ({
           ...prev,
-          [draggedComponent.id]: {
-          backgroundColor: '#184cb4', // Default blue background
-            logoScale: 1,
-          customerLogo: null
-          }
+          [draggedComponent.id]: defaultProperties
         }));
 
       const newTimeline = [...timeline, newItem].sort((a, b) => a.start_time - b.start_time);
+      console.log('New timeline:', newTimeline);
       setTimeline(newTimeline);
       calculateTotalDuration(newTimeline);
         
@@ -1319,10 +1322,16 @@ export default function ProjectEditor() {
       currentTime >= item.start_time && currentTime < item.start_time + item.duration
     );
     
-    // If no current item but we have components in timeline, show the last component
-    if (!currentItem && timeline.length > 0) {
-      return timeline[timeline.length - 1];
-    }
+    // Debug logging
+    console.log('getCurrentTimelineItem - currentTime:', currentTime);
+    console.log('Timeline items:', timeline.map(item => ({
+      id: item.id,
+      type: item.component?.type,
+      start_time: item.start_time,
+      duration: item.duration,
+      isActive: currentTime >= item.start_time && currentTime < item.start_time + item.duration
+    })));
+    console.log('Current item found:', currentItem);
     
     return currentItem || null;
   };
@@ -1763,6 +1772,7 @@ export default function ProjectEditor() {
                     )}
                     isPlaying={isPlaying && currentTime < getCurrentTimelineItem()!.start_time + getCurrentTimelineItem()!.duration}
                     mode="preview"
+                    timelineItem={getCurrentTimelineItem()!}
                   />
                 </div>
               ) : timelineLayers.length === 0 ? (
@@ -2223,6 +2233,26 @@ export default function ProjectEditor() {
                 <h3 className="text-lg font-medium text-gray-900 mb-4">Components</h3>
                 
                 <div className="space-y-2">
+                  {/* iPhone SMS Component - Hardcoded for now */}
+                  <div
+                    draggable
+                    onDragStart={(e) => handleDragStart(e, {
+                      id: 'iphone_sms_component',
+                      name: 'iPhone SMS Conversation',
+                      type: 'iphone_sms',
+                      category: 'UI Component',
+                      duration: 10,
+                      created_at: new Date().toISOString(),
+                      updated_at: new Date().toISOString(),
+                      metadata: {}
+                    })}
+                    className="p-4 border border-gray-200 rounded-lg cursor-move hover:bg-gray-50 transition-colors"
+                  >
+                    <h4 className="font-medium text-gray-900">iPhone SMS Conversation</h4>
+                    <p className="text-sm text-gray-500">iphone_sms</p>
+                    <p className="text-xs text-gray-400 mt-1">Interactive SMS conversation in iPhone interface</p>
+                  </div>
+                  
                   {components.map((component) => (
                     <div
                       key={component.id}
@@ -2309,111 +2339,40 @@ export default function ProjectEditor() {
                   {selectedTimelineItem.component.name} Properties
                 </h3>
                 
-                <div className="space-y-4">
-                  {/* Component Properties */}
-                  <div className="border-b border-gray-200 pb-4">
-                    <h4 className="text-sm font-medium text-gray-700 mb-3">Component Settings</h4>
-                    <div className="space-y-3">
-                      {/* Logo Upload - First */}
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Custom Logo Upload
-                        </label>
-                        <input
-                          key={`file-input-${selectedTimelineItem.component.id}`}
-                          type="file"
-                          accept="image/*"
-                          onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (file) {
-                              const reader = new FileReader();
-                              reader.onload = (event) => {
-                                const newProps = {
-                                  ...componentProperties,
-                                  [selectedTimelineItem.component.id]: {
-                                    ...componentProperties[selectedTimelineItem.component.id],
-                                    customerLogo: {
-                                      name: file.name,
-                                      data: event.target?.result as string
-                                    }
-                                  }
-                                };
-                                setComponentProperties(newProps);
-                              };
-                              reader.readAsDataURL(file);
-                            }
-                            // Reset the input value to allow re-uploading the same file
-                            e.target.value = '';
-                          }}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
-                        />
-                        {componentProperties[selectedTimelineItem.component.id]?.customerLogo && (
-                          <div className="text-xs text-gray-500 mt-1">
-                            Current: {componentProperties[selectedTimelineItem.component.id].customerLogo.name}
-                          </div>
-                        )}
+                {(() => {
+                  const schema = getComponentSchema(selectedTimelineItem.component.type);
+                  if (!schema) {
+                    return (
+                      <div className="text-center text-gray-500 py-8">
+                        <p>No properties schema found for component type: {selectedTimelineItem.component.type}</p>
                       </div>
+                    );
+                  }
+                  
+                  return (
+                    <ComponentPropertiesPanel
+                      schema={schema}
+                      properties={componentProperties[selectedTimelineItem.component.id] || {}}
+                      onPropertyChange={(propertyId, value) => {
+                        setComponentProperties(prev => ({
+                          ...prev,
+                          [selectedTimelineItem.component.id]: {
+                            ...prev[selectedTimelineItem.component.id],
+                            [propertyId]: value
+                          }
+                        }));
+                      }}
+                    />
+                  );
+                })()}
 
-                      {/* Background Color - Second */}
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Background Color
-                        </label>
-                        <input
-                          type="color"
-                          value={componentProperties[selectedTimelineItem.component.id]?.backgroundColor || '#184cb4'}
-                          onChange={(e) => {
-                            const newProps = {
-                              ...componentProperties,
-                              [selectedTimelineItem.component.id]: {
-                                ...componentProperties[selectedTimelineItem.component.id],
-                                backgroundColor: e.target.value
-                              }
-                            };
-                            setComponentProperties(newProps);
-                          }}
-                          className="w-full h-10 border border-gray-300 rounded-md cursor-pointer"
-                        />
-                      </div>
-                      
-                      {/* Logo Scale - Third */}
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Logo Scale
-                        </label>
-                        <input
-                          type="range"
-                          min="0.1"
-                          max="2"
-                          step="0.1"
-                          value={componentProperties[selectedTimelineItem.component.id]?.logoScale || 1}
-                          onChange={(e) => {
-                            const newProps = {
-                              ...componentProperties,
-                              [selectedTimelineItem.component.id]: {
-                                ...componentProperties[selectedTimelineItem.component.id],
-                                logoScale: parseFloat(e.target.value)
-                              }
-                            };
-                            setComponentProperties(newProps);
-                          }}
-                          className="w-full"
-                        />
-                        <div className="text-xs text-gray-500 text-center">
-                          {componentProperties[selectedTimelineItem.component.id]?.logoScale || 1}x
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={() => removeFromTimeline(selectedTimelineItem.id)}
-                    className="w-full flex items-center justify-center px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
-                  >
-                    <TrashIcon className="h-4 w-4 mr-2" />
-                    Remove from Timeline
-                  </button>
-                </div>
+                <button
+                  onClick={() => removeFromTimeline(selectedTimelineItem.id)}
+                  className="w-full flex items-center justify-center px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 mt-4"
+                >
+                  <TrashIcon className="h-4 w-4 mr-2" />
+                  Remove from Timeline
+                </button>
               </div>
             ) : selectedMediaItem ? (
               // Media Properties Panel

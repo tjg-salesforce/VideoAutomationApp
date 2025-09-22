@@ -28,10 +28,20 @@ export const componentRegistry: ComponentRegistry = {
   'customer_logo_split': {
     type: 'css',
     renderer: CSSAnimationRenderer,
-    preview: 'css',
+    preview: 'dom',
     performance: 'high',
     debounceMs: 50,
     maxInstances: 5,
+    pauseOffscreen: false
+  },
+  // iPhone SMS Conversation Component
+  'iphone_sms': {
+    type: 'css',
+    renderer: CSSAnimationRenderer,
+    preview: 'dom',
+    performance: 'high',
+    debounceMs: 100,
+    maxInstances: 3,
     pauseOffscreen: false
   }
 };

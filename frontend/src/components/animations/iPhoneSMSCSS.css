@@ -1,0 +1,444 @@
+/* iPhone SMS Component Styles - Based on provided design */
+.iphone-sms-container {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: #f0f2f5;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
+  font-weight: normal;
+}
+
+.phone-bezel {
+  width: 375px;
+  height: 812px;
+  background-color: #1a1a1a;
+  border-radius: 40px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25), inset 0 0 10px rgba(255, 255, 255, 0.1);
+  position: relative;
+  overflow: hidden;
+  border: 8px solid #333;
+}
+
+.screen {
+  width: 100%;
+  height: 100%;
+  background-color: #000;
+  display: flex;
+  flex-direction: column;
+}
+
+.notch {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 160px;
+  height: 30px;
+  background-color: #1a1a1a;
+  border-bottom-left-radius: 15px;
+  border-bottom-right-radius: 15px;
+  z-index: 10;
+}
+
+.status-bar {
+  background-color: #efefef;
+  padding: 10px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: #000;
+  font-size: 14px;
+  font-weight: 600;
+  position: relative;
+  z-index: 5;
+}
+
+.status-bar .right-icons {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.status-bar svg {
+  fill: #000;
+  stroke: #000;
+}
+
+.status-bar span {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.conversation-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  background-color: #efefef;
+  border-bottom: 1px solid #e0e0e0;
+  position: relative;
+}
+
+.back-button {
+  position: absolute;
+  left: 10px;
+  color: #007aff;
+  font-size: 16px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.back-button-chevron svg {
+  fill: none;
+  stroke: #007aff;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  width: 8px;
+  height: 18px;
+}
+
+.unread-count {
+  background-color: #007aff;
+  color: white;
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 7px;
+  min-width: 20px;
+  text-align: center;
+}
+
+.header-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.profile-pic-container {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 2px solid white;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.profile-pic {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.name-container {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.contact-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: #000;
+}
+
+.chevron svg {
+  fill: none;
+  stroke: #8e8e93;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  width: 8px;
+  height: 18px;
+}
+
+/* Message bubble styles */
+.imessage {
+  background-color: #f7f7f7;
+  border: 1px solid #e5e5ea;
+  border-radius: 0;
+  display: flex;
+  flex-direction: column;
+  font-size: 1.25rem;
+  margin: 0 auto;
+  max-width: 600px;
+  padding: 10px;
+  flex-grow: 1;
+  overflow-y: auto;
+  gap: 8px;
+  min-height: 0; /* Allow flex shrinking */
+}
+
+.imessage p {
+  border-radius: 1.15rem;
+  line-height: 1.25;
+  max-width: 75%;
+  padding: 0.5rem .875rem;
+  position: relative;
+  word-wrap: break-word;
+  font-size: 15px;
+}
+
+.imessage p::before,
+.imessage p::after {
+  bottom: -0.1rem;
+  content: "";
+  height: 1rem;
+  position: absolute;
+}
+
+p.from-me {
+  align-self: flex-end;
+  background-color: #248bf5;
+  color: #fff;
+}
+
+p.from-me::before {
+  border-bottom-left-radius: 0.8rem 0.7rem;
+  border-right: 1rem solid #248bf5;
+  right: -0.35rem;
+  transform: translate(0, -0.1rem);
+}
+
+p.from-me::after {
+  background-color: #fff;
+  border-bottom-left-radius: 0.5rem;
+  right: -40px;
+  transform:translate(-30px, -2px);
+  width: 10px;
+}
+
+p[class^="from-"] {
+  margin: 0.5rem 0;
+  width: fit-content;
+}
+
+p.from-me ~ p.from-me {
+  margin: 0.25rem 0 0;
+}
+
+p.from-me ~ p.from-me:not(:last-child) {
+  margin: 0.25rem 0 0;
+}
+
+p.from-me ~ p.from-me:last-child {
+  margin-bottom: 0.5rem;
+}
+
+p.from-them {
+  align-self: flex-start;
+  background-color: #e5e5ea;
+  color: #000;
+}
+
+p.from-them:before {
+  border-bottom-right-radius: 0.8rem 0.7rem;
+  border-left: 1rem solid #e5e5ea;
+  left: -0.35rem;
+  transform: translate(0, -0.1rem);
+}
+
+p.from-them::after {
+  background-color: #fff;
+  border-bottom-right-radius: 0.5rem;
+  left: 20px;
+  transform: translate(-30px, -2px);
+  width: 10px;
+}
+
+.message-input-container {
+  background-color: #fff;
+  padding: 8px 10px 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.message-input {
+  display: flex;
+  align-items: center;
+  padding: 0;
+  background-color: #fff;
+  gap: 8px;
+}
+
+.input-box {
+  flex-grow: 1;
+  background-color: #f7f7f7;
+  border: none;
+  border-radius: 20px;
+  padding: 8px 12px;
+  font-size: 15px;
+  outline: none;
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.05);
+}
+
+.action-icon {
+  cursor: pointer;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.plus-icon {
+  background-color: #e5e5ea;
+  border-radius: 50%;
+  padding: 4px;
+}
+
+.plus-icon svg {
+  stroke: #929292;
+  stroke-width: 2.5px;
+  width: 18px;
+  height: 18px;
+}
+
+.microphone-icon {
+  color: #8e8e93;
+  width: 24px;
+  height: 24px;
+  margin-right: 5px;
+}
+
+.microphone-icon svg {
+  fill: currentColor;
+  width: 13px;
+  height: 18px;
+}
+
+.home-indicator {
+  width: 140px;
+  height: 5px;
+  background-color: #000;
+  border-radius: 2.5px;
+  margin: 8px auto 8px;
+}
+
+::placeholder {
+  color: #8e8e93;
+}
+
+/* Properties Panel Styles */
+.properties-panel-content {
+  padding: 20px;
+  background: #fff;
+}
+
+.property-group {
+  margin-bottom: 24px;
+}
+
+.property-group label {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: 600;
+  color: #333;
+}
+
+.property-input,
+.property-select,
+.property-textarea {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 14px;
+  margin-bottom: 12px;
+}
+
+.property-textarea {
+  resize: vertical;
+  min-height: 60px;
+}
+
+.add-message-btn {
+  background: #007aff;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 10px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-bottom: 16px;
+  transition: background 0.2s;
+}
+
+.add-message-btn:hover {
+  background: #0056b3;
+}
+
+.message-config {
+  border: 1px solid #e1e1e1;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+  background: #f9f9f9;
+}
+
+.message-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  font-weight: 600;
+  color: #333;
+}
+
+.delete-message-btn {
+  background: #ff3b30;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.delete-message-btn:hover {
+  background: #d70015;
+}
+
+.message-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.setting-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.setting-row label {
+  font-size: 12px;
+  font-weight: 500;
+  color: #666;
+  margin-bottom: 0;
+}
+
+/* Responsive adjustments */
+@media (max-width: 400px) {
+  .iphone-frame {
+    width: 100%;
+    height: 100vh;
+    border-radius: 0;
+    padding: 0;
+  }
+  
+  .iphone-screen {
+    border-radius: 0;
+  }
+}
