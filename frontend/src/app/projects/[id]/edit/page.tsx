@@ -244,7 +244,11 @@ export default function ProjectEditor() {
         newLayers.push(groupLayer);
       }
       if (groupLayer) {
-        groupLayer.items.push(groupItem as any);
+        // Check if group already exists to prevent duplicates
+        const existingGroup = groupLayer.items.find(item => item.id === groupId);
+        if (!existingGroup) {
+          groupLayer.items.push(groupItem as any);
+        }
       }
       return newLayers;
     });
@@ -264,6 +268,8 @@ export default function ProjectEditor() {
     }, 100);
     
     console.log('Created group:', groupName, 'with layers:', selectedLayerIds);
+    console.log('Group ID:', groupId);
+    console.log('Group item:', groupItem);
   };
 
   const moveLayersToGroup = (layerIds: string[], groupId: string) => {
@@ -2630,11 +2636,11 @@ export default function ProjectEditor() {
                     </button>
                   </div>
                   <div className="relative h-16" data-layer-content>
-                    {layer.items.map((item: any) => {
+                    {layer.items.map((item: any, itemIndex: number) => {
                       const isGroup = item.isGroup;
                       return (
                         <div
-                          key={item.id}
+                          key={`${layer.id}-${item.id}-${itemIndex}`}
                           data-group-id={isGroup ? item.id : undefined}
                           draggable={!isGroup}
                           onDragStart={!isGroup ? (e) => handleMediaItemDragStart(e, item, layer.id) : undefined}
