@@ -119,7 +119,18 @@ export default function ProjectEditor() {
   const [draggedLayer, setDraggedLayer] = useState<any>(null);
   const [draggedTimelineItem, setDraggedTimelineItem] = useState<any>(null);
   const [draggedMediaItem, setDraggedMediaItem] = useState<any>(null);
-  const [dragPreview, setDragPreview] = useState<{x: number, y: number, time: number, layer: number, snapTarget?: string} | null>(null);
+  const [dragPreview, setDragPreview] = useState<{
+    x: number;
+    y: number;
+    time: number;
+    layer: number;
+    snapTarget?: string;
+    itemId?: string;
+    layerId?: string;
+    startTime?: number;
+    duration?: number;
+    swapTarget?: string;
+  } | null>(null);
   const [dragOutline, setDragOutline] = useState<{x: number, y: number, time: number, layer: number, width: number, item: any, targetTop?: number} | null>(null);
   const [snapToGrid, setSnapToGrid] = useState(true);
   const [editingLayerName, setEditingLayerName] = useState<string | null>(null);
@@ -183,6 +194,12 @@ export default function ProjectEditor() {
   } | null>(null);
   const [editingTabId, setEditingTabId] = useState<string | null>(null);
   const [editingTabName, setEditingTabName] = useState<string>('');
+  const [isDraggingItem, setIsDraggingItem] = useState<{
+    itemId: string;
+    layerId: string;
+    startX: number;
+    startTime: number;
+  } | null>(null);
   const [videoFormat, setVideoFormat] = useState<'mp4' | 'webm' | 'mov'>('mp4');
   const [hasAlphaChannel, setHasAlphaChannel] = useState(false);
   const [showDownloadModal, setShowDownloadModal] = useState(false);
@@ -373,6 +390,151 @@ export default function ProjectEditor() {
     }
   };
 
+  // Collision detection and snapping functions
+  const checkCollision = (itemId: string, layerId: string, newStartTime: number, duration: number) => {
+    const layer = timelineLayers.find(l => l.id === layerId);
+    if (!layer) return null;
+
+    const otherItems = layer.items.filter(item => item.id !== itemId);
+    const newEndTime = newStartTime + duration;
+
+    // Calculate snap threshold based on timeline width
+    const timelineWidth = timelineRef.current?.getBoundingClientRect().width || 1000;
+    const snapThreshold = (20 / timelineWidth) * totalDuration; // 20px threshold
+
+    for (const otherItem of otherItems) {
+      const otherStart = otherItem.start_time;
+      const otherEnd = otherItem.start_time + otherItem.duration;
+
+      // Check for overlap
+      if (newStartTime < otherEnd && newEndTime > otherStart) {
+        return {
+          type: 'overlap',
+          item: otherItem,
+          overlapStart: Math.max(newStartTime, otherStart),
+          overlapEnd: Math.min(newEndTime, otherEnd)
+        };
+      }
+
+      // Check for snap opportunities
+      const snapToStart = Math.abs(newEndTime - otherStart) < snapThreshold;
+      const snapToEnd = Math.abs(newStartTime - otherEnd) < snapThreshold;
+
+      if (snapToStart) {
+        return {
+          type: 'snap',
+          item: otherItem,
+          snapTime: otherStart - duration,
+          snapPosition: 'before'
+        };
+      }
+
+      if (snapToEnd) {
+        return {
+          type: 'snap',
+          item: otherItem,
+          snapTime: otherEnd,
+          snapPosition: 'after'
+        };
+      }
+    }
+
+    return null;
+  };
+
+  const handleItemDrag = (itemId: string, layerId: string, newStartTime: number) => {
+    const item = timelineLayers
+      .find(l => l.id === layerId)
+      ?.items.find(i => i.id === itemId);
+    
+    if (!item) return;
+
+    const collision = checkCollision(itemId, layerId, newStartTime, item.duration);
+    
+    if (collision) {
+      if (collision.type === 'snap') {
+        // Snap to adjacent item
+        setDragPreview({
+          x: 0,
+          y: 0,
+          time: collision.snapTime || 0,
+          layer: 0,
+          itemId,
+          layerId,
+          startTime: collision.snapTime || 0,
+          duration: item.duration
+        });
+      } else if (collision.type === 'overlap') {
+        // Prepare for swap - show preview but don't move yet
+        setDragPreview({
+          x: 0,
+          y: 0,
+          time: newStartTime,
+          layer: 0,
+          itemId,
+          layerId,
+          startTime: newStartTime,
+          duration: item.duration,
+          swapTarget: collision.item.id
+        });
+      }
+    } else {
+      // No collision, normal drag
+      setDragPreview({
+        x: 0,
+        y: 0,
+        time: newStartTime,
+        layer: 0,
+        itemId,
+        layerId,
+        startTime: newStartTime,
+        duration: item.duration
+      });
+    }
+  };
+
+  const handleItemDrop = (itemId: string, layerId: string, finalStartTime: number) => {
+    const item = timelineLayers
+      .find(l => l.id === layerId)
+      ?.items.find(i => i.id === itemId);
+    
+    if (!item) return;
+
+    const collision = checkCollision(itemId, layerId, finalStartTime, item.duration);
+    
+    if (collision && collision.type === 'overlap' && dragPreview?.swapTarget) {
+      // Perform swap
+      const targetItem = timelineLayers
+        .find(l => l.id === layerId)
+        ?.items.find(i => i.id === collision.item.id);
+      
+      if (targetItem) {
+        // Swap positions
+        setTimelineLayers(prev => prev.map(layer => ({
+          ...layer,
+          items: layer.items.map(i => {
+            if (i.id === itemId) {
+              return { ...i, start_time: targetItem.start_time };
+            } else if (i.id === collision.item.id) {
+              return { ...i, start_time: item.start_time };
+            }
+            return i;
+          })
+        })));
+      }
+    } else {
+      // Normal drop
+      setTimelineLayers(prev => prev.map(layer => ({
+        ...layer,
+        items: layer.items.map(i => 
+          i.id === itemId ? { ...i, start_time: finalStartTime } : i
+        )
+      })));
+    }
+
+    setDragPreview(null);
+  };
+
   const ungroupGroup = (groupId: string) => {
     // Find the group item
     const groupItem = timelineLayers
@@ -436,6 +598,19 @@ export default function ProjectEditor() {
     );
     setSelectedItems(new Set(allItemIds));
   };
+
+  // Global mouse event listeners for item dragging
+  useEffect(() => {
+    if (isDraggingItem) {
+      document.addEventListener('mousemove', handleGlobalMouseMove);
+      document.addEventListener('mouseup', handleGlobalMouseUp);
+      
+      return () => {
+        document.removeEventListener('mousemove', handleGlobalMouseMove);
+        document.removeEventListener('mouseup', handleGlobalMouseUp);
+      };
+    }
+  }, [isDraggingItem, dragPreview]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -799,6 +974,46 @@ export default function ProjectEditor() {
     setDragPreview(null); // Clear any existing drag preview
     setDragOutline(null); // Clear any existing drag outline
     e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleItemMouseDown = (e: React.MouseEvent, item: any, layerId: string) => {
+    if (e.button !== 0) return; // Only left mouse button
+    
+    const rect = e.currentTarget.getBoundingClientRect();
+    const timelineRect = timelineRef.current?.getBoundingClientRect();
+    if (!timelineRect) return;
+    
+    // Calculate the actual position of the item on the timeline
+    const itemStartX = (item.start_time / totalDuration) * timelineRect.width;
+    const clickX = e.clientX - timelineRect.left;
+    const clickOffset = clickX - itemStartX; // Offset from the start of the item
+    
+    setIsDraggingItem({
+      itemId: item.id,
+      layerId,
+      startX: clickOffset, // Store the offset from item start
+      startTime: item.start_time
+    });
+    
+    e.preventDefault();
+  };
+
+  const handleGlobalMouseMove = (e: MouseEvent) => {
+    if (!isDraggingItem || !timelineRef.current) return;
+    
+    const timelineRect = timelineRef.current.getBoundingClientRect();
+    const x = e.clientX - timelineRect.left;
+    // Calculate new start time based on where the mouse is, minus the click offset
+    const newStartTime = Math.max(0, (x - isDraggingItem.startX) / timelineRect.width * totalDuration);
+    
+    handleItemDrag(isDraggingItem.itemId, isDraggingItem.layerId, newStartTime);
+  };
+
+  const handleGlobalMouseUp = () => {
+    if (!isDraggingItem || !dragPreview || dragPreview.startTime === undefined) return;
+    
+    handleItemDrop(isDraggingItem.itemId, isDraggingItem.layerId, dragPreview.startTime);
+    setIsDraggingItem(null);
   };
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -2640,6 +2855,7 @@ export default function ProjectEditor() {
                           data-group-id={isGroup ? item.id : undefined}
                           draggable={!isGroup}
                           onDragStart={!isGroup ? (e) => handleMediaItemDragStart(e, item, layer.id) : undefined}
+                          onMouseDown={!isGroup ? (e) => handleItemMouseDown(e, item, layer.id) : undefined}
                           onClick={(e) => {
                             if (isGroup) {
                               // For groups, single click selects, double click opens
@@ -2742,6 +2958,28 @@ export default function ProjectEditor() {
                       </div>
                     );
                     })}
+                    
+                    {/* Drag Preview */}
+                    {dragPreview && dragPreview.layerId === layer.id && dragPreview.startTime !== undefined && dragPreview.duration !== undefined && (
+                      <div
+                        className="absolute top-0 h-full rounded-lg p-3 pointer-events-none z-50"
+                        style={{
+                          left: `${(dragPreview.startTime / totalDuration) * 100}%`,
+                          width: `${(dragPreview.duration / totalDuration) * 100}%`,
+                          minWidth: '120px',
+                          backgroundColor: dragPreview.swapTarget ? 'rgba(255, 165, 0, 0.3)' : 'rgba(59, 130, 246, 0.3)',
+                          border: `2px dashed ${dragPreview.swapTarget ? '#f59e0b' : '#3b82f6'}`,
+                        }}
+                      >
+                        <div className="text-sm font-medium truncate text-blue-900">
+                          {dragPreview.swapTarget ? 'Swap Position' : 'Drop Here'}
+                        </div>
+                        <div className="text-xs opacity-75 text-blue-700">
+                          {formatTime(dragPreview.startTime)} - {formatTime(dragPreview.startTime + dragPreview.duration)}
+                        </div>
+                      </div>
+                    )}
+                    
                     {filteredItems.length === 0 && (
                       <div className="flex-1 flex items-center justify-center text-gray-500">
                         <p>Drag media here to add to this layer</p>
