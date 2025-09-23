@@ -194,6 +194,17 @@ export default function ProjectEditor() {
     }
   }, [project]);
 
+  // Populate component objects in timeline items when both project and components are loaded
+  useEffect(() => {
+    if (project?.timeline && components.length > 0) {
+      const timelineWithComponents = project.timeline.map(item => ({
+        ...item,
+        component: components.find(comp => comp.id === item.component_id) || item.component
+      }));
+      setTimeline(timelineWithComponents);
+    }
+  }, [project, components]);
+
   useEffect(() => {
     calculateTotalDuration(timeline);
   }, [timelineLayers]);
@@ -236,14 +247,14 @@ export default function ProjectEditor() {
           // Extract properties from timeline items if they exist
           const properties: { [key: string]: any } = {};
           projectData.timeline.forEach((item: any) => {
-            if (item.properties) {
+            if (item.properties && item.component?.id) {
               properties[item.component.id] = item.properties;
             }
           });
           setComponentProperties(properties);
         }
 
-        // Restore media assets, timeline layers, and zoom from settings if they exist
+        // Restore media assets, timeline layers, zoom, and media properties from settings if they exist
         if (projectData.settings) {
           if (projectData.settings.mediaAssets) {
             setMediaAssets(projectData.settings.mediaAssets);
@@ -253,6 +264,9 @@ export default function ProjectEditor() {
           }
           if (projectData.settings.timelineZoom) {
             setTimelineZoom(projectData.settings.timelineZoom);
+          }
+          if (projectData.settings.mediaProperties) {
+            setMediaProperties(projectData.settings.mediaProperties);
           }
         }
         return; // Success, exit the retry loop
@@ -608,7 +622,7 @@ export default function ProjectEditor() {
         component_id: draggedComponent.id,
           component: draggedComponent,
         start_time: startTime,
-          duration: draggedComponent.duration || 5,
+          duration: totalDuration || 10, // Use total video duration instead of component duration
         order: timeline.length
         };
 
@@ -873,7 +887,7 @@ export default function ProjectEditor() {
       // Include component properties in the timeline items
       const timelineWithProperties = timeline.map(item => ({
         ...item,
-            properties: componentProperties[item.component.id] || {}
+            properties: item.component?.id ? componentProperties[item.component.id] || {} : {}
       }));
 
       const projectData = {
@@ -883,7 +897,8 @@ export default function ProjectEditor() {
         settings: {
           mediaAssets,
           timelineLayers,
-          timelineZoom
+          timelineZoom,
+          mediaProperties
         },
         status: 'in_progress'
       };
