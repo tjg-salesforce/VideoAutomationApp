@@ -157,6 +157,32 @@ export default function ProjectEditor() {
       type: 'media';
     })[];
   }[]>([]);
+
+  // Tab system for grouping
+  const [timelineTabs, setTimelineTabs] = useState<{
+    id: string;
+    name: string;
+    type: 'main' | 'group';
+    layers: string[]; // Array of layer IDs in this tab
+  }[]>([
+    {
+      id: 'main-video',
+      name: 'Main Video',
+      type: 'main',
+      layers: []
+    }
+  ]);
+  const [currentActiveTab, setCurrentActiveTab] = useState<string>('main-video');
+  const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+  const [isSelecting, setIsSelecting] = useState(false);
+  const [selectionBox, setSelectionBox] = useState<{
+    startX: number;
+    startY: number;
+    endX: number;
+    endY: number;
+  } | null>(null);
+  const [editingTabId, setEditingTabId] = useState<string | null>(null);
+  const [editingTabName, setEditingTabName] = useState<string>('');
   const [videoFormat, setVideoFormat] = useState<'mp4' | 'webm' | 'mov'>('mp4');
   const [hasAlphaChannel, setHasAlphaChannel] = useState(false);
   const [showDownloadModal, setShowDownloadModal] = useState(false);
@@ -180,6 +206,331 @@ export default function ProjectEditor() {
   const isMediaItem = (item: any): item is {id: string; asset: any; start_time: number; duration: number; layerId: string; type: 'media'} => {
     return item.type === 'media' || item.asset !== undefined;
   };
+
+  // Group management functions
+  const createNewGroup = (selectedLayerIds: string[], groupName: string) => {
+    const groupId = `group_${Date.now()}`;
+    const newGroup = {
+      id: groupId,
+      name: groupName,
+      type: 'group' as const,
+      layers: selectedLayerIds
+    };
+
+    // Add group as a timeline item in the current tab
+    const groupItem = {
+      id: groupId,
+      name: groupName,
+      type: 'group',
+      start_time: 0,
+      duration: 10, // Default duration for groups
+      layerId: 'group-layer',
+      isGroup: true,
+      layers: selectedLayerIds
+    };
+
+    // Add group item to timeline layers
+    setTimelineLayers(prev => {
+      const newLayers = [...prev];
+      // Find or create a group layer
+      let groupLayer = newLayers.find(layer => layer.id === 'group-layer');
+      if (!groupLayer) {
+        groupLayer = {
+          id: 'group-layer',
+          name: 'Groups',
+          visible: true,
+          items: []
+        };
+        newLayers.push(groupLayer);
+      }
+      if (groupLayer) {
+        groupLayer.items.push(groupItem as any);
+      }
+      return newLayers;
+    });
+
+    // Add group to tabs for navigation
+    setTimelineTabs(prev => [...prev, newGroup]);
+    setCurrentActiveTab(groupId);
+    setSelectedItems(new Set());
+    
+    // Auto-enter rename mode for the group name
+    setTimeout(() => {
+      const groupElement = document.querySelector(`[data-group-id="${groupId}"] .group-name`) as HTMLInputElement;
+      if (groupElement) {
+        groupElement.focus();
+        groupElement.select();
+      }
+    }, 100);
+    
+    console.log('Created group:', groupName, 'with layers:', selectedLayerIds);
+  };
+
+  const moveLayersToGroup = (layerIds: string[], groupId: string) => {
+    setTimelineTabs(prev => prev.map(tab => 
+      tab.id === groupId 
+        ? { ...tab, layers: [...tab.layers, ...layerIds] }
+        : tab
+    ));
+  };
+
+  const moveLayersFromGroup = (layerIds: string[], groupId: string) => {
+    setTimelineTabs(prev => prev.map(tab => 
+      tab.id === groupId 
+        ? { ...tab, layers: tab.layers.filter(id => !layerIds.includes(id)) }
+        : tab
+    ));
+  };
+
+  const deleteGroup = (groupId: string) => {
+    // Remove from tabs
+    setTimelineTabs(prev => prev.filter(tab => tab.id !== groupId));
+    
+    // Remove from timeline layers
+    setTimelineLayers(prev => prev.map(layer => ({
+      ...layer,
+      items: layer.items.filter(item => item.id !== groupId)
+    })));
+    
+    if (currentActiveTab === groupId) {
+      setCurrentActiveTab('main-video');
+    }
+  };
+
+  const renameGroup = (groupId: string, newName: string) => {
+    // Update in tabs
+    setTimelineTabs(prev => prev.map(tab => 
+      tab.id === groupId ? { ...tab, name: newName } : tab
+    ));
+    
+    // Update in timeline layers
+    setTimelineLayers(prev => prev.map(layer => ({
+      ...layer,
+      items: layer.items.map(item => 
+        item.id === groupId ? { ...item, name: newName } : item
+      )
+    })));
+  };
+
+  const openGroup = (groupId: string) => {
+    setCurrentActiveTab(groupId);
+  };
+
+  const handleGroupDoubleClick = (groupId: string) => {
+    openGroup(groupId);
+  };
+
+  const handleGroupNameEdit = (groupId: string, newName: string) => {
+    if (newName.trim()) {
+      renameGroup(groupId, newName.trim());
+    }
+  };
+
+  const startEditingTab = (tabId: string, currentName: string) => {
+    setEditingTabId(tabId);
+    setEditingTabName(currentName);
+  };
+
+  const finishEditingTab = () => {
+    if (editingTabId && editingTabName.trim()) {
+      if (editingTabId === 'main-video') {
+        // Can't rename main video tab
+        setEditingTabId(null);
+        setEditingTabName('');
+        return;
+      }
+      
+      // Update tab name
+      setTimelineTabs(prev => prev.map(tab => 
+        tab.id === editingTabId ? { ...tab, name: editingTabName.trim() } : tab
+      ));
+      
+      // Also update group item name if it's a group
+      setTimelineLayers(prev => prev.map(layer => ({
+        ...layer,
+        items: layer.items.map(item => 
+          item.id === editingTabId ? { ...item, name: editingTabName.trim() } as any : item
+        )
+      })));
+    }
+    
+    setEditingTabId(null);
+    setEditingTabName('');
+  };
+
+  const handleTabKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      finishEditingTab();
+    } else if (e.key === 'Escape') {
+      setEditingTabId(null);
+      setEditingTabName('');
+    }
+  };
+
+  const ungroupGroup = (groupId: string) => {
+    // Find the group item
+    const groupItem = timelineLayers
+      .find(layer => layer.id === 'group-layer')
+      ?.items.find(item => item.id === groupId);
+    
+    if (!groupItem || !(groupItem as any).isGroup) return;
+    
+    const groupLayers = (groupItem as any).layers || [];
+    
+    // Move layers back to main video (remove from any group tabs)
+    setTimelineTabs(prev => prev.map(tab => 
+      tab.id === groupId 
+        ? { ...tab, layers: [] } // Clear the group tab
+        : tab
+    ));
+    
+    // Remove the group item from timeline
+    setTimelineLayers(prev => prev.map(layer => ({
+      ...layer,
+      items: layer.items.filter(item => item.id !== groupId)
+    })));
+    
+    // Remove the group tab
+    setTimelineTabs(prev => prev.filter(tab => tab.id !== groupId));
+    
+    // Switch back to main video if we were in the group
+    if (currentActiveTab === groupId) {
+      setCurrentActiveTab('main-video');
+    }
+    
+    console.log('Ungrouped group:', groupId, 'layers returned to main video:', groupLayers);
+  };
+
+  // Multi-select functions
+  const toggleItemSelection = (itemId: string, event: React.MouseEvent) => {
+    if (event.metaKey || event.ctrlKey) {
+      setSelectedItems(prev => {
+        const newSet = new Set(prev);
+        if (newSet.has(itemId)) {
+          newSet.delete(itemId);
+        } else {
+          newSet.add(itemId);
+        }
+        return newSet;
+      });
+    } else {
+      // If clicking without Cmd/Ctrl, toggle selection
+      setSelectedItems(prev => {
+        if (prev.has(itemId)) {
+          // If already selected, deselect it
+          return new Set();
+        } else {
+          // If not selected, select only this item
+          return new Set([itemId]);
+        }
+      });
+    }
+  };
+
+  const clearSelection = () => {
+    setSelectedItems(new Set());
+  };
+
+  const selectAll = () => {
+    const allItemIds = timelineLayers.flatMap(layer => 
+      layer.items.map(item => item.id)
+    );
+    setSelectedItems(new Set(allItemIds));
+  };
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey) {
+        if (e.key === 'g' && !e.shiftKey) {
+          e.preventDefault();
+          if (selectedItems.size > 0) {
+            // Get unique layer IDs from selected items
+            const selectedLayerIds = Array.from(selectedItems).map(itemId => {
+              const layer = timelineLayers.find(l => 
+                l.items.some(item => item.id === itemId)
+              );
+              return layer?.id;
+            }).filter(Boolean) as string[];
+            
+            // Remove duplicates
+            const uniqueLayerIds = [...new Set(selectedLayerIds)];
+            
+            console.log('Selected items:', Array.from(selectedItems));
+            console.log('Selected layer IDs:', uniqueLayerIds);
+            
+            if (uniqueLayerIds.length > 0) {
+              const groupName = `Group ${timelineTabs.filter(t => t.type === 'group').length + 1}`;
+              createNewGroup(uniqueLayerIds, groupName);
+            }
+          }
+        } else if (e.key === 'g' && e.shiftKey) {
+          e.preventDefault();
+          // Ungroup selected groups
+          if (selectedItems.size > 0) {
+            const selectedGroupIds = Array.from(selectedItems).filter(itemId => {
+              const layer = timelineLayers.find(l => 
+                l.items.some(item => item.id === itemId && (item as any).isGroup)
+              );
+              return layer !== undefined;
+            });
+            
+            selectedGroupIds.forEach(groupId => {
+              ungroupGroup(groupId);
+            });
+            
+            if (selectedGroupIds.length > 0) {
+              setSelectedItems(new Set());
+            }
+          }
+        } else if (e.key === 'a') {
+          e.preventDefault();
+          selectAll();
+        }
+      } else if (e.key === 'Escape') {
+        clearSelection();
+      } else if (e.key === 'Delete' || e.key === 'Backspace') {
+        // Delete selected groups with confirmation
+        if (selectedItems.size > 0) {
+          const selectedGroupIds = Array.from(selectedItems).filter(itemId => {
+            const layer = timelineLayers.find(l => 
+              l.items.some(item => item.id === itemId && (item as any).isGroup)
+            );
+            return layer !== undefined;
+          });
+          
+          if (selectedGroupIds.length > 0) {
+            const groupNames = selectedGroupIds.map(groupId => {
+              const groupItem = timelineLayers
+                .find(layer => layer.id === 'group-layer')
+                ?.items.find(item => item.id === groupId);
+              return (groupItem as any)?.name || 'Unknown Group';
+            });
+            
+            const confirmMessage = `Delete ${groupNames.length > 1 ? 'groups' : 'group'} "${groupNames.join('", "')}"?\n\nClick "Keep Layers" to ungroup (layers return to main video)\nClick "Delete All" to permanently delete the layers\nClick "Cancel" to do nothing`;
+            
+            if (confirm(confirmMessage)) {
+              // Ask what to do with the layers
+              const keepLayers = confirm('Keep the layers? (Click OK to ungroup, Cancel to delete everything)');
+              
+              selectedGroupIds.forEach(groupId => {
+                if (keepLayers) {
+                  ungroupGroup(groupId);
+                } else {
+                  deleteGroup(groupId);
+                }
+              });
+              
+              setSelectedItems(new Set());
+            }
+          }
+        }
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [selectedItems, timelineTabs]);
 
   // Migration function to move components from timeline array to timelineLayers
   const migrateComponentsToTimelineLayers = () => {
@@ -2116,8 +2467,57 @@ export default function ProjectEditor() {
                 )}
 
 
+              {/* Timeline Tabs */}
+              <div className="mb-4">
+                <div className="flex items-center space-x-1 border-b border-gray-200">
+                  {timelineTabs.map((tab) => (
+                    <div key={tab.id} className="relative">
+                      {editingTabId === tab.id ? (
+                        <input
+                          type="text"
+                          value={editingTabName}
+                          onChange={(e) => setEditingTabName(e.target.value)}
+                          onBlur={finishEditingTab}
+                          onKeyDown={handleTabKeyDown}
+                          className="px-4 py-2 text-sm font-medium border-b-2 border-blue-500 text-blue-600 bg-transparent outline-none min-w-0"
+                          autoFocus
+                        />
+                      ) : (
+                        <button
+                          onClick={() => setCurrentActiveTab(tab.id)}
+                          onDoubleClick={() => startEditingTab(tab.id, tab.name)}
+                          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                            currentActiveTab === tab.id
+                              ? 'border-blue-500 text-blue-600'
+                              : 'border-transparent text-gray-500 hover:text-gray-700'
+                          }`}
+                        >
+                          {tab.name}
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
               {/* Media Layers */}
-              {timelineLayers.map((layer, layerIndex) => (
+              {timelineLayers
+                .filter(layer => {
+                  const activeTabData = timelineTabs.find(tab => tab.id === currentActiveTab);
+                  if (!activeTabData) return false;
+                  
+                  if (activeTabData.type === 'main') {
+                    // Main video shows all layers that are not in any group
+                    const layersInGroups = timelineTabs
+                      .filter(tab => tab.type === 'group')
+                      .flatMap(tab => tab.layers);
+                    return !layersInGroups.includes(layer.id);
+                  } else {
+                    // Group tabs show only layers in that group
+                    return activeTabData.layers.includes(layer.id);
+                  }
+                })
+                .map((layer, layerIndex) => (
                 <div key={layer.id} className="mb-4">
                   <div 
                     className="flex items-center mb-2 cursor-move hover:bg-gray-50 p-2 rounded"
@@ -2202,37 +2602,83 @@ export default function ProjectEditor() {
                     </button>
                   </div>
                   <div className="relative h-16" data-layer-content>
-                    {layer.items.map((item: any) => (
-                      <div
-                        key={item.id}
-                        draggable
-                        onDragStart={(e) => handleMediaItemDragStart(e, item, layer.id)}
-                        onClick={() => {
-                          setSelectedMediaItem(item);
-                          setSelectedTimelineItem(null);
-                          setShowComponentLibrary(false);
-                          setShowMediaLibrary(false);
-                        }}
-                        className={`absolute top-0 h-full rounded-lg p-3 cursor-move transition-colors group ${
-                          selectedMediaItem?.id === item.id 
-                            ? 'bg-green-300 text-green-900' 
-                            : 'bg-green-100 text-green-900 hover:bg-green-200'
-                        }`}
-                        style={{
-                          left: `${(item.start_time / totalDuration) * 100}%`,
-                          width: `${(item.duration / totalDuration) * 100}%`,
-                          minWidth: '120px'
-                        }}
-                      >
-                        <div className="text-sm font-medium truncate">
-                          {isMediaItem(item) ? item.asset.name : isComponentItem(item) ? item.component.name : 'Unknown Item'}
-                        </div>
-                        <div className="text-xs opacity-75">
-                          {formatTime(item.start_time)} - {formatTime(item.start_time + item.duration)}
-                        </div>
+                    {layer.items.map((item: any) => {
+                      const isGroup = item.isGroup;
+                      return (
+                        <div
+                          key={item.id}
+                          data-group-id={isGroup ? item.id : undefined}
+                          draggable={!isGroup}
+                          onDragStart={!isGroup ? (e) => handleMediaItemDragStart(e, item, layer.id) : undefined}
+                          onClick={(e) => {
+                            if (isGroup) {
+                              // For groups, single click selects, double click opens
+                              if (e.detail === 2) {
+                                handleGroupDoubleClick(item.id);
+                              } else {
+                                toggleItemSelection(item.id, e);
+                              }
+                            } else {
+                              toggleItemSelection(item.id, e);
+                              setSelectedMediaItem(item);
+                              setSelectedTimelineItem(null);
+                              setShowComponentLibrary(false);
+                              setShowMediaLibrary(false);
+                            }
+                          }}
+                          className={`absolute top-0 h-full rounded-lg p-3 cursor-move transition-colors group ${
+                            isGroup 
+                              ? selectedItems.has(item.id)
+                                ? 'bg-purple-300 text-purple-900 border-2 border-purple-500'
+                                : 'bg-purple-100 text-purple-900 hover:bg-purple-200 border-2 border-purple-300'
+                              : selectedItems.has(item.id)
+                                ? 'bg-blue-300 text-blue-900 border-2 border-blue-500'
+                                : selectedMediaItem?.id === item.id 
+                                ? 'bg-green-300 text-green-900' 
+                                : 'bg-green-100 text-green-900 hover:bg-green-200'
+                          }`}
+                          style={{
+                            left: `${(item.start_time / totalDuration) * 100}%`,
+                            width: `${(item.duration / totalDuration) * 100}%`,
+                            minWidth: '120px'
+                          }}
+                        >
+                          {isGroup ? (
+                            <div className="flex items-center justify-between w-full">
+                              <div className="flex items-center space-x-2">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                                </svg>
+                                <input
+                                  type="text"
+                                  className="group-name bg-transparent border-none outline-none text-sm font-medium truncate"
+                                  value={item.name}
+                                  onChange={(e) => handleGroupNameEdit(item.id, e.target.value)}
+                                  onBlur={(e) => handleGroupNameEdit(item.id, e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      e.currentTarget.blur();
+                                    }
+                                  }}
+                                />
+                              </div>
+                              <div className="text-xs opacity-75">
+                                {item.layers?.length || 0} layers
+                              </div>
+                            </div>
+                          ) : (
+                            <>
+                              <div className="text-sm font-medium truncate">
+                                {isMediaItem(item) ? item.asset.name : isComponentItem(item) ? item.component.name : 'Unknown Item'}
+                              </div>
+                              <div className="text-xs opacity-75">
+                                {formatTime(item.start_time)} - {formatTime(item.start_time + item.duration)}
+                              </div>
+                            </>
+                          )}
                         
                         {/* Video end marker - show where original video ends if extended */}
-                        {isMediaItem(item) && item.asset.type === 'video' && item.asset.duration && item.duration > item.asset.duration && (
+                        {!isGroup && isMediaItem(item) && item.asset.type === 'video' && item.asset.duration && item.duration > item.asset.duration && (
                           <div 
                             className="absolute top-0 bottom-0 w-0.5 bg-yellow-400 border-l border-yellow-500"
                             style={{
@@ -2243,7 +2689,7 @@ export default function ProjectEditor() {
                         )}
                         
                         {/* Start resize handle for images and videos */}
-                        {isMediaItem(item) && (item.asset.type === 'image' || item.asset.type === 'video') && (
+                        {!isGroup && isMediaItem(item) && (item.asset.type === 'image' || item.asset.type === 'video') && (
                           <div
                             className="absolute left-0 top-0 w-2 h-full bg-blue-500 opacity-0 group-hover:opacity-100 cursor-ew-resize transition-opacity hover:bg-blue-600"
                             onMouseDown={(e) => handleMediaResize(e, item, layer.id, 'start')}
@@ -2254,7 +2700,7 @@ export default function ProjectEditor() {
                         )}
                         
                         {/* End resize handle for images and videos */}
-                        {isMediaItem(item) && (item.asset.type === 'image' || item.asset.type === 'video') && (
+                        {!isGroup && isMediaItem(item) && (item.asset.type === 'image' || item.asset.type === 'video') && (
                           <div
                             className="absolute right-0 top-0 w-2 h-full bg-blue-500 opacity-0 group-hover:opacity-100 cursor-ew-resize transition-opacity hover:bg-blue-600"
                             onMouseDown={(e) => handleMediaResize(e, item, layer.id, 'end')}
@@ -2264,7 +2710,8 @@ export default function ProjectEditor() {
                           </div>
                         )}
                       </div>
-                    ))}
+                    );
+                    })}
                     {layer.items.length === 0 && (
                       <div className="flex-1 flex items-center justify-center text-gray-500">
                         <p>Drag media here to add to this layer</p>
