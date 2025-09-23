@@ -2184,8 +2184,20 @@ export default function ProjectEditor() {
           <div className="flex-1 flex items-center justify-center p-6 bg-gray-100">
             <div className="w-full h-full max-w-6xl relative" style={{ aspectRatio: '16/9' }}>
               {/* Render media layers first (background) */}
-              {timelineLayers.map((layer, layerIndex) => 
-                layer.visible && layer.items.map((mediaItem) => {
+              {timelineLayers.map((layer, layerIndex) => {
+                // Check if this layer is hidden by a group
+                const groupLayer = timelineLayers.find(l => l.id === 'group-layer');
+                const isHiddenByGroup = groupLayer?.items.some(groupItem => {
+                  if (!(groupItem as any).isGroup) return false;
+                  const groupLayers = (groupItem as any).layers || [];
+                  return groupLayers.includes(layer.id) && !groupLayer.visible;
+                });
+                
+                if (!layer.visible || isHiddenByGroup) return null;
+                
+                return layer.items.map((mediaItem) => {
+                  // Skip group items in preview - they don't render content
+                  if ((mediaItem as any).isGroup) return null;
                   const isActive = currentTime >= mediaItem.start_time && currentTime < mediaItem.start_time + mediaItem.duration;
                   if (!isActive) return null;
                   
@@ -2261,8 +2273,8 @@ export default function ProjectEditor() {
                       </div>
                     </div>
                   );
-                })
-              )}
+                });
+              })}
               
               {/* Render components on top */}
               {getCurrentTimelineItem() ? (
@@ -2483,17 +2495,33 @@ export default function ProjectEditor() {
                           autoFocus
                         />
                       ) : (
-                        <button
-                          onClick={() => setCurrentActiveTab(tab.id)}
-                          onDoubleClick={() => startEditingTab(tab.id, tab.name)}
-                          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-                            currentActiveTab === tab.id
-                              ? 'border-blue-500 text-blue-600'
-                              : 'border-transparent text-gray-500 hover:text-gray-700'
-                          }`}
-                        >
-                          {tab.name}
-                        </button>
+                        <div className="group relative">
+                          <button
+                            onClick={() => setCurrentActiveTab(tab.id)}
+                            onDoubleClick={() => startEditingTab(tab.id, tab.name)}
+                            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                              currentActiveTab === tab.id
+                                ? 'border-blue-500 text-blue-600'
+                                : 'border-transparent text-gray-500 hover:text-gray-700'
+                            }`}
+                          >
+                            {tab.name}
+                          </button>
+                          {tab.type === 'group' && currentActiveTab === tab.id && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (confirm(`Delete group "${tab.name}"?`)) {
+                                  ungroupGroup(tab.id);
+                                }
+                              }}
+                              className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity text-xs flex items-center justify-center hover:bg-red-600"
+                              title="Delete group"
+                            >
+                              ×
+                            </button>
+                          )}
+                        </div>
                       )}
                     </div>
                   ))}
