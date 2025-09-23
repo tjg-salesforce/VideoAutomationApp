@@ -561,9 +561,11 @@ export default function ProjectEditor() {
         // Extending the end
         newDuration = Math.max(1, startDuration + deltaTime); // Minimum 1 second
       } else {
-        // Extending the start (moving start time earlier)
-        newStartTime = Math.max(0, startTime - deltaTime);
-        newDuration = Math.max(1, startDuration + deltaTime);
+        // Resizing the start handle
+        // Dragging right moves start time later (reduces duration)
+        // Dragging left moves start time earlier (increases duration)
+        newStartTime = Math.max(0, startTime + deltaTime);
+        newDuration = Math.max(1, startDuration - deltaTime);
       }
       
       // Update the item in the timeline
@@ -2160,12 +2162,23 @@ export default function ProjectEditor() {
                           />
                         )}
                         
-                        {/* Extension handle for images and videos */}
+                        {/* Start resize handle for images and videos */}
+                        {(item.asset.type === 'image' || item.asset.type === 'video') && (
+                          <div
+                            className="absolute left-0 top-0 w-2 h-full bg-blue-500 opacity-0 group-hover:opacity-100 cursor-ew-resize transition-opacity hover:bg-blue-600"
+                            onMouseDown={(e) => handleMediaResize(e, item, layer.id, 'start')}
+                            title="Drag to resize start"
+                          >
+                            <div className="absolute left-0 top-1/2 transform -translate-y-1/2 w-1 h-4 bg-white rounded-sm opacity-50" />
+                          </div>
+                        )}
+                        
+                        {/* End resize handle for images and videos */}
                         {(item.asset.type === 'image' || item.asset.type === 'video') && (
                           <div
                             className="absolute right-0 top-0 w-2 h-full bg-blue-500 opacity-0 group-hover:opacity-100 cursor-ew-resize transition-opacity hover:bg-blue-600"
                             onMouseDown={(e) => handleMediaResize(e, item, layer.id, 'end')}
-                            title="Drag to extend duration"
+                            title="Drag to resize end"
                           >
                             <div className="absolute right-0 top-1/2 transform -translate-y-1/2 w-1 h-4 bg-white rounded-sm opacity-50" />
                           </div>
