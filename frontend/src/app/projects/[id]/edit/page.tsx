@@ -208,13 +208,13 @@ export default function ProjectEditor() {
   };
 
   // Group management functions
-  const createNewGroup = (selectedLayerIds: string[], groupName: string) => {
+  const createNewGroup = (selectedItemIds: string[], groupName: string) => {
     const groupId = `group_${Date.now()}`;
     const newGroup = {
       id: groupId,
       name: groupName,
       type: 'group' as const,
-      layers: selectedLayerIds
+      items: selectedItemIds // Store individual item IDs instead of layer IDs
     };
 
     // Add group as a timeline item in the current tab
@@ -226,7 +226,7 @@ export default function ProjectEditor() {
       duration: 10, // Default duration for groups
       layerId: 'group-layer',
       isGroup: true,
-      layers: selectedLayerIds
+      items: selectedItemIds // Store individual item IDs
     };
 
     // Add group item to timeline layers
@@ -254,7 +254,7 @@ export default function ProjectEditor() {
     });
 
     // Add group to tabs for navigation
-    setTimelineTabs(prev => [...prev, newGroup]);
+    setTimelineTabs(prev => [...prev, newGroup as any]);
     setCurrentActiveTab(groupId);
     setSelectedItems(new Set());
     
@@ -267,7 +267,7 @@ export default function ProjectEditor() {
       }
     }, 100);
     
-    console.log('Created group:', groupName, 'with layers:', selectedLayerIds);
+    console.log('Created group:', groupName, 'with items:', selectedItemIds);
     console.log('Group ID:', groupId);
     console.log('Group item:', groupItem);
   };
@@ -381,14 +381,7 @@ export default function ProjectEditor() {
     
     if (!groupItem || !(groupItem as any).isGroup) return;
     
-    const groupLayers = (groupItem as any).layers || [];
-    
-    // Move layers back to main video (remove from any group tabs)
-    setTimelineTabs(prev => prev.map(tab => 
-      tab.id === groupId 
-        ? { ...tab, layers: [] } // Clear the group tab
-        : tab
-    ));
+    const groupItems = (groupItem as any).items || [];
     
     // Remove the group item from timeline
     setTimelineLayers(prev => prev.map(layer => ({
@@ -404,7 +397,7 @@ export default function ProjectEditor() {
       setCurrentActiveTab('main-video');
     }
     
-    console.log('Ungrouped group:', groupId, 'layers returned to main video:', groupLayers);
+    console.log('Ungrouped group:', groupId, 'items returned to main video:', groupItems);
   };
 
   // Multi-select functions
@@ -451,23 +444,19 @@ export default function ProjectEditor() {
         if (e.key === 'g' && !e.shiftKey) {
           e.preventDefault();
           if (selectedItems.size > 0) {
-            // Get unique layer IDs from selected items
-            const selectedLayerIds = Array.from(selectedItems).map(itemId => {
-              const layer = timelineLayers.find(l => 
-                l.items.some(item => item.id === itemId)
-              );
-              return layer?.id;
-            }).filter(Boolean) as string[];
+            // Use selected item IDs directly instead of converting to layer IDs
+            const selectedItemIds = Array.from(selectedItems);
             
-            // Remove duplicates
-            const uniqueLayerIds = [...new Set(selectedLayerIds)];
+            console.log('Selected items:', selectedItemIds);
+            console.log('All timeline layers:', timelineLayers.map(l => ({ id: l.id, name: l.name, itemCount: l.items.length })));
+            console.log('Items in each layer:', timelineLayers.map(l => ({ 
+              layerId: l.id, 
+              items: l.items.map(item => ({ id: item.id, name: (item as any).name || (item as any).asset?.name || 'Unknown' }))
+            })));
             
-            console.log('Selected items:', Array.from(selectedItems));
-            console.log('Selected layer IDs:', uniqueLayerIds);
-            
-            if (uniqueLayerIds.length > 0) {
+            if (selectedItemIds.length > 0) {
               const groupName = `Group ${timelineTabs.filter(t => t.type === 'group').length + 1}`;
-              createNewGroup(uniqueLayerIds, groupName);
+              createNewGroup(selectedItemIds, groupName);
             }
           }
         } else if (e.key === 'g' && e.shiftKey) {
@@ -2195,8 +2184,8 @@ export default function ProjectEditor() {
                 const groupLayer = timelineLayers.find(l => l.id === 'group-layer');
                 const isHiddenByGroup = groupLayer?.items.some(groupItem => {
                   if (!(groupItem as any).isGroup) return false;
-                  const groupLayers = (groupItem as any).layers || [];
-                  return groupLayers.includes(layer.id) && !groupLayer.visible;
+                  const groupItems = (groupItem as any).items || [];
+                  return layer.items.some(item => groupItems.includes(item.id)) && !groupLayer.visible;
                 });
                 
                 if (!layer.visible || isHiddenByGroup) return null;
@@ -2536,22 +2525,29 @@ export default function ProjectEditor() {
 
               {/* Media Layers */}
               {timelineLayers
-                .filter(layer => {
+                .map((layer, layerIndex) => {
                   const activeTabData = timelineTabs.find(tab => tab.id === currentActiveTab);
-                  if (!activeTabData) return false;
+                  if (!activeTabData) return null;
+                  
+                  // Filter items within the layer based on current tab
+                  let filteredItems = layer.items;
                   
                   if (activeTabData.type === 'main') {
-                    // Main video shows all layers that are not in any group
-                    const layersInGroups = timelineTabs
+                    // Main video shows items that are not in any group
+                    const itemsInGroups = timelineTabs
                       .filter(tab => tab.type === 'group')
-                      .flatMap(tab => tab.layers);
-                    return !layersInGroups.includes(layer.id);
+                      .flatMap(tab => (tab as any).items || []);
+                    filteredItems = layer.items.filter(item => !itemsInGroups.includes(item.id));
                   } else {
-                    // Group tabs show only layers in that group
-                    return activeTabData.layers.includes(layer.id);
+                    // Group tabs show only items in that group
+                    const groupItems = (activeTabData as any).items || [];
+                    filteredItems = layer.items.filter(item => groupItems.includes(item.id));
                   }
-                })
-                .map((layer, layerIndex) => (
+                  
+                  // Only show layer if it has visible items
+                  if (filteredItems.length === 0) return null;
+                  
+                  return (
                 <div key={layer.id} className="mb-4">
                   <div 
                     className="flex items-center mb-2 cursor-move hover:bg-gray-50 p-2 rounded"
@@ -2636,7 +2632,7 @@ export default function ProjectEditor() {
                     </button>
                   </div>
                   <div className="relative h-16" data-layer-content>
-                    {layer.items.map((item: any, itemIndex: number) => {
+                    {filteredItems.map((item: any, itemIndex: number) => {
                       const isGroup = item.isGroup;
                       return (
                         <div
@@ -2697,7 +2693,7 @@ export default function ProjectEditor() {
                                 />
                               </div>
                               <div className="text-xs opacity-75">
-                                {item.layers?.length || 0} layers
+                                {item.items?.length || 0} items
                               </div>
                             </div>
                           ) : (
@@ -2746,14 +2742,16 @@ export default function ProjectEditor() {
                       </div>
                     );
                     })}
-                    {layer.items.length === 0 && (
+                    {filteredItems.length === 0 && (
                       <div className="flex-1 flex items-center justify-center text-gray-500">
                         <p>Drag media here to add to this layer</p>
                       </div>
                     )}
                   </div>
                 </div>
-              ))}
+                );
+                })
+                .filter(Boolean)}
               </div> {/* End of Timeline Content with Zoom Scaling */}
 
               {/* Add New Layer Button */}
