@@ -148,13 +148,14 @@ export default function ProjectEditor() {
     id: string;
     name: string;
     visible: boolean;
-    items: {
+    items: (TimelineItem | {
       id: string;
       asset: any;
       start_time: number;
       duration: number;
       layerId: string;
-    }[];
+      type: 'media';
+    })[];
   }[]>([]);
   const [videoFormat, setVideoFormat] = useState<'mp4' | 'webm' | 'mov'>('mp4');
   const [hasAlphaChannel, setHasAlphaChannel] = useState(false);
@@ -171,11 +172,57 @@ export default function ProjectEditor() {
   const timelineRef = useRef<HTMLDivElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
 
+  // Helper functions to identify item types
+  const isComponentItem = (item: any): item is TimelineItem => {
+    return item.component_id !== undefined && item.component !== undefined;
+  };
+
+  const isMediaItem = (item: any): item is {id: string; asset: any; start_time: number; duration: number; layerId: string; type: 'media'} => {
+    return item.type === 'media' || item.asset !== undefined;
+  };
+
+  // Migration function to move components from timeline array to timelineLayers
+  const migrateComponentsToTimelineLayers = () => {
+    if (timeline.length === 0) return;
+
+    // Create a components layer if it doesn't exist
+    const componentsLayer = timelineLayers.find(layer => layer.id === 'components-layer');
+    
+    if (!componentsLayer) {
+      // Create new components layer
+      const newComponentsLayer = {
+        id: 'components-layer',
+        name: 'Components',
+        visible: true,
+        items: timeline as TimelineItem[]
+      };
+      
+      setTimelineLayers(prev => [newComponentsLayer, ...prev]);
+    } else {
+      // Add components to existing layer
+      setTimelineLayers(prev => prev.map(layer => 
+        layer.id === 'components-layer' 
+          ? { ...layer, items: [...timeline, ...layer.items] }
+          : layer
+      ));
+    }
+    
+    // Clear the old timeline array
+    setTimeline([]);
+  };
+
   useEffect(() => {
     loadProject();
     loadComponents();
     loadLottieData();
   }, [projectId]);
+
+  // Migration effect - move components to timelineLayers when they're loaded
+  useEffect(() => {
+    if (timeline.length > 0) {
+      migrateComponentsToTimelineLayers();
+    }
+  }, [timeline]);
 
   const loadLottieData = async () => {
     try {
@@ -254,13 +301,39 @@ export default function ProjectEditor() {
           setComponentProperties(properties);
         }
 
+        // Also restore component properties from timelineLayers
+        if (projectData.settings?.timelineLayers) {
+          const properties: { [key: string]: any } = {};
+          projectData.settings.timelineLayers.forEach((layer: any) => {
+            layer.items.forEach((item: any) => {
+              if (item.properties && item.component?.id) {
+                properties[item.component.id] = item.properties;
+              }
+            });
+          });
+          if (Object.keys(properties).length > 0) {
+            setComponentProperties(prev => ({ ...prev, ...properties }));
+          }
+        }
+
         // Restore media assets, timeline layers, zoom, and media properties from settings if they exist
         if (projectData.settings) {
           if (projectData.settings.mediaAssets) {
             setMediaAssets(projectData.settings.mediaAssets);
           }
           if (projectData.settings.timelineLayers) {
-            setTimelineLayers(projectData.settings.timelineLayers);
+            // Migrate existing media items to have type: 'media' property
+            const migratedLayers = projectData.settings.timelineLayers.map((layer: any) => ({
+              ...layer,
+              items: layer.items.map((item: any) => {
+                // If item has asset property but no type, it's a media item
+                if (item.asset && !item.type) {
+                  return { ...item, type: 'media' };
+                }
+                return item;
+              })
+            }));
+            setTimelineLayers(migratedLayers);
           }
           if (projectData.settings.timelineZoom) {
             setTimelineZoom(projectData.settings.timelineZoom);
@@ -617,30 +690,51 @@ export default function ProjectEditor() {
     if (draggedComponent) {
       console.log('Dropping component:', draggedComponent);
       const layerHeight = 80;
-      const targetLayer = Math.floor(y / layerHeight);
+      const targetLayerIndex = Math.floor(y / layerHeight);
       
       const newItem: TimelineItem = {
         id: `timeline_${Date.now()}`,
         component_id: draggedComponent.id,
-          component: draggedComponent,
+        component: draggedComponent,
         start_time: startTime,
-          duration: totalDuration || 10, // Use total video duration instead of component duration
-        order: timeline.length
-        };
+        duration: totalDuration || 10, // Use total video duration instead of component duration
+        order: 0 // Will be set by the layer system
+      };
 
-        // Set default properties for the component based on schema
-        const defaultProperties = getDefaultProperties(draggedComponent.type);
-        console.log('Default properties for', draggedComponent.type, ':', defaultProperties);
+      // Set default properties for the component based on schema
+      const defaultProperties = getDefaultProperties(draggedComponent.type);
+      console.log('Default properties for', draggedComponent.type, ':', defaultProperties);
+      
+      setComponentProperties(prev => ({
+        ...prev,
+        [draggedComponent.id]: defaultProperties
+      }));
+
+      // Add to timelineLayers instead of timeline
+      setTimelineLayers(prev => {
+        const newLayers = [...prev];
         
-        setComponentProperties(prev => ({
-          ...prev,
-          [draggedComponent.id]: defaultProperties
-        }));
-
-      const newTimeline = [...timeline, newItem].sort((a, b) => a.start_time - b.start_time);
-      console.log('New timeline:', newTimeline);
-      setTimeline(newTimeline);
-      calculateTotalDuration(newTimeline);
+        // Find or create the target layer
+        if (targetLayerIndex >= 0 && targetLayerIndex < newLayers.length) {
+          // Add to existing layer
+          const targetLayer = newLayers[targetLayerIndex];
+          newLayers[targetLayerIndex] = {
+            ...targetLayer,
+            items: [...targetLayer.items, newItem]
+          };
+        } else {
+          // Create new layer
+          const newLayerId = `layer_${Date.now()}`;
+          newLayers.push({
+            id: newLayerId,
+            name: `Layer ${newLayers.length + 1}`,
+            visible: true,
+            items: [newItem]
+          });
+        }
+        
+        return newLayers;
+      });
         
         // Auto-select the new component and show properties
         setSelectedTimelineItem(newItem);
@@ -668,7 +762,8 @@ export default function ProjectEditor() {
           asset: draggedMediaAsset,
           start_time: adjustedStartTime,
           duration: duration,
-          layerId: targetLayer.id
+          layerId: targetLayer.id,
+          type: 'media' as const
         };
         
         setTimelineLayers(prev => prev.map(layer => 
@@ -695,7 +790,8 @@ export default function ProjectEditor() {
           asset: draggedMediaAsset,
           start_time: startTime,
           duration: draggedMediaAsset.duration || 5, // Use asset duration or default to 5s
-          layerId: `layer_${Date.now()}`
+          layerId: `layer_${Date.now()}`,
+          type: 'media' as const
         };
         
         const newLayer = {
@@ -886,10 +982,21 @@ export default function ProjectEditor() {
 
     setLoading(true);
     try {
-      // Include component properties in the timeline items
+      // Include component properties in the timeline items from both old timeline and new timelineLayers
       const timelineWithProperties = timeline.map(item => ({
         ...item,
-            properties: item.component?.id ? componentProperties[item.component.id] || {} : {}
+        properties: item.component?.id ? componentProperties[item.component.id] || {} : {}
+      }));
+
+      // Also include component properties from timelineLayers
+      const timelineLayersWithProperties = timelineLayers.map(layer => ({
+        ...layer,
+        items: layer.items.map(item => ({
+          ...item,
+          properties: isComponentItem(item) && item.component?.id 
+            ? componentProperties[item.component.id] || {} 
+            : {}
+        }))
       }));
 
       const projectData = {
@@ -898,9 +1005,10 @@ export default function ProjectEditor() {
         timeline: timelineWithProperties,
         settings: {
           mediaAssets,
-          timelineLayers,
+          timelineLayers: timelineLayersWithProperties,
           timelineZoom,
-          mediaProperties
+          mediaProperties,
+          componentProperties // Also save componentProperties separately for easier access
         },
         status: 'in_progress'
       };
@@ -978,10 +1086,10 @@ export default function ProjectEditor() {
     timelineLayers.forEach(layer => {
       layer.items.forEach((item: any) => {
         if (Math.abs(time - item.start_time) < snapThreshold) {
-          targets.push({ time: item.start_time, type: 'start', label: `${item.asset.name} start` });
+          targets.push({ time: item.start_time, type: 'start', label: `${isMediaItem(item) ? item.asset.name : isComponentItem(item) ? item.component.name : 'Item'} start` });
         }
         if (Math.abs(time - (item.start_time + item.duration)) < snapThreshold) {
-          targets.push({ time: item.start_time + item.duration, type: 'end', label: `${item.asset.name} end` });
+          targets.push({ time: item.start_time + item.duration, type: 'end', label: `${isMediaItem(item) ? item.asset.name : isComponentItem(item) ? item.component.name : 'Item'} end` });
         }
       });
     });
@@ -1760,10 +1868,10 @@ export default function ProjectEditor() {
                           opacity: mediaProps.opacity
                         })}
                       >
-                      {mediaItem.asset.type === 'video' ? (
+                      {isMediaItem(mediaItem) && mediaItem.asset.type === 'video' ? (
                           <div className="relative w-full h-full">
                             <VideoTimelineControl
-                              src={mediaItem.asset.data}
+                              src={isMediaItem(mediaItem) ? mediaItem.asset.data : ''}
                               startTime={mediaItem.start_time}
                               duration={mediaItem.duration}
                               currentTime={currentTime}
@@ -1771,23 +1879,34 @@ export default function ProjectEditor() {
                               className="w-full h-full object-contain rounded-lg"
                             />
                             {/* Extension marker - show when video is extended beyond original duration */}
-                            {mediaItem.asset.duration && mediaItem.duration > mediaItem.asset.duration && (
+                            {isMediaItem(mediaItem) && mediaItem.asset.duration && mediaItem.duration > mediaItem.asset.duration && (
                               <div 
                                 className="absolute top-0 bottom-0 w-0.5 bg-yellow-400 opacity-80"
                                 style={{
-                                  left: `${(mediaItem.asset.duration / mediaItem.duration) * 100}%`
+                                  left: `${isMediaItem(mediaItem) ? (mediaItem.asset.duration / mediaItem.duration) * 100 : 0}%`
                                 }}
                                 title="End of original video - extension begins here"
                               />
                             )}
                           </div>
-                        ) : (
+                        ) : isMediaItem(mediaItem) ? (
                           <img
-                          src={mediaItem.asset.data}
-                          alt={mediaItem.asset.name}
+                          src={isMediaItem(mediaItem) ? mediaItem.asset.data : ''}
+                          alt={isMediaItem(mediaItem) ? mediaItem.asset.name : ''}
                             className="w-full h-full object-contain rounded-lg"
                           />
-                      )}
+                        ) : isComponentItem(mediaItem) ? (
+                          <ComponentRenderer
+                            component={mediaItem.component}
+                            properties={componentProperties[mediaItem.component.id] || {}}
+                            currentTime={Math.min(
+                              currentTime - mediaItem.start_time,
+                              mediaItem.duration
+                            )}
+                            isPlaying={isPlaying}
+                            mode="preview"
+                          />
+                        ) : null}
                       </div>
                     </div>
                   );
@@ -1996,47 +2115,6 @@ export default function ProjectEditor() {
                   </div>
                 )}
 
-                {/* Main Component Layer */}
-                <div className="mb-4">
-                <div className="flex items-center mb-2">
-                  <h4 className="text-sm font-medium text-gray-700">Components</h4>
-                  <div className="ml-2 w-3 h-3 bg-blue-500 rounded"></div>
-                </div>
-                <div className="relative h-16">
-                  {timeline.map((item) => (
-                    <div
-                      key={item.id}
-                      draggable
-                      onDragStart={(e) => handleTimelineItemDragStart(e, item)}
-                      onClick={() => {
-                        setSelectedTimelineItem(item);
-                        setShowComponentLibrary(false);
-                        setShowMediaLibrary(false);
-                      }}
-                      className={`absolute top-0 h-full rounded-lg p-3 cursor-move transition-colors ${
-                        selectedTimelineItem?.id === item.id
-                          ? 'bg-blue-500 text-white'
-                          : 'bg-blue-100 text-blue-900 hover:bg-blue-200'
-                      }`}
-                      style={{
-                        left: `${(item.start_time / totalDuration) * 100}%`,
-                        width: `${(item.duration / totalDuration) * 100}%`,
-                        minWidth: '120px'
-                      }}
-                    >
-                      <div className="text-sm font-medium truncate">{item.component.name}</div>
-                      <div className="text-xs opacity-75">
-                        {formatTime(item.start_time)} - {formatTime(item.start_time + item.duration)}
-                      </div>
-                    </div>
-                  ))}
-                  {timeline.length === 0 && (
-                    <div className="flex-1 flex items-center justify-center text-gray-500">
-                      <p>Drag components here to add them to the timeline</p>
-                    </div>
-                  )}
-                </div>
-              </div>
 
               {/* Media Layers */}
               {timelineLayers.map((layer, layerIndex) => (
@@ -2146,24 +2224,26 @@ export default function ProjectEditor() {
                           minWidth: '120px'
                         }}
                       >
-                        <div className="text-sm font-medium truncate">{item.asset.name}</div>
+                        <div className="text-sm font-medium truncate">
+                          {isMediaItem(item) ? item.asset.name : isComponentItem(item) ? item.component.name : 'Unknown Item'}
+                        </div>
                         <div className="text-xs opacity-75">
                           {formatTime(item.start_time)} - {formatTime(item.start_time + item.duration)}
                         </div>
                         
                         {/* Video end marker - show where original video ends if extended */}
-                        {item.asset.type === 'video' && item.asset.duration && item.duration > item.asset.duration && (
+                        {isMediaItem(item) && item.asset.type === 'video' && item.asset.duration && item.duration > item.asset.duration && (
                           <div 
                             className="absolute top-0 bottom-0 w-0.5 bg-yellow-400 border-l border-yellow-500"
                             style={{
-                              left: `${(item.asset.duration / item.duration) * 100}%`
+                              left: `${isMediaItem(item) ? (item.asset.duration / item.duration) * 100 : 0}%`
                             }}
-                            title={`Original video ends at ${formatTime(item.start_time + item.asset.duration)}`}
+                            title={`Original video ends at ${formatTime(item.start_time + (isMediaItem(item) ? item.asset.duration : 0))}`}
                           />
                         )}
                         
                         {/* Start resize handle for images and videos */}
-                        {(item.asset.type === 'image' || item.asset.type === 'video') && (
+                        {isMediaItem(item) && (item.asset.type === 'image' || item.asset.type === 'video') && (
                           <div
                             className="absolute left-0 top-0 w-2 h-full bg-blue-500 opacity-0 group-hover:opacity-100 cursor-ew-resize transition-opacity hover:bg-blue-600"
                             onMouseDown={(e) => handleMediaResize(e, item, layer.id, 'start')}
@@ -2174,7 +2254,7 @@ export default function ProjectEditor() {
                         )}
                         
                         {/* End resize handle for images and videos */}
-                        {(item.asset.type === 'image' || item.asset.type === 'video') && (
+                        {isMediaItem(item) && (item.asset.type === 'image' || item.asset.type === 'video') && (
                           <div
                             className="absolute right-0 top-0 w-2 h-full bg-blue-500 opacity-0 group-hover:opacity-100 cursor-ew-resize transition-opacity hover:bg-blue-600"
                             onMouseDown={(e) => handleMediaResize(e, item, layer.id, 'end')}
@@ -2412,17 +2492,38 @@ export default function ProjectEditor() {
                 </button>
               </div>
             ) : selectedMediaItem ? (
-              // Media Properties Panel
+              // Media/Component Properties Panel
               <div>
                 <h3 className="text-lg font-medium text-gray-900 mb-4">
-                  {selectedMediaItem.asset.name} Properties
+                  {selectedMediaItem.asset?.name || selectedMediaItem.component?.name || 'Item'} Properties
                 </h3>
                 
                 <div className="space-y-4">
+                  {/* Component Properties */}
+                  {selectedMediaItem.component && (
+                    <div className="border-b border-gray-200 pb-4">
+                      {getComponentSchema(selectedMediaItem.component.type) && (
+                        <ComponentPropertiesPanel
+                          schema={getComponentSchema(selectedMediaItem.component.type)!}
+                          properties={componentProperties[selectedMediaItem.component.id] || {}}
+                          onPropertyChange={(propertyId, value) => {
+                            setComponentProperties(prev => ({
+                              ...prev,
+                              [selectedMediaItem.component.id]: {
+                                ...prev[selectedMediaItem.component.id],
+                                [propertyId]: value
+                              }
+                            }));
+                          }}
+                        />
+                      )}
+                    </div>
+                  )}
+                  
                   {/* Media Properties */}
-                  <div className="border-b border-gray-200 pb-4">
-                    <h4 className="text-sm font-medium text-gray-700 mb-3">Media Settings</h4>
-                    <div className="space-y-4">
+                  {selectedMediaItem.asset && (
+                    <div className="border-b border-gray-200 pb-4">
+                      <div className="space-y-4">
                       {/* Scale */}
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -2664,6 +2765,7 @@ export default function ProjectEditor() {
                       </div>
                     </div>
                   </div>
+                  )}
 
                   <button
                     onClick={() => {

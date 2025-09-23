@@ -344,11 +344,8 @@ const ComponentPropertiesPanel: React.FC<ComponentPropertiesPanelProps> = ({
 
   return (
     <div className="space-y-4">
-      <div className="border-b border-gray-200 pb-4">
-        <h4 className="text-sm font-medium text-gray-700 mb-3">Component Settings</h4>
-        <div className="space-y-3">
-          {schema.properties.map(renderProperty)}
-        </div>
+      <div className="space-y-3">
+        {schema.properties.map(renderProperty)}
       </div>
     </div>
   );
