@@ -237,11 +237,207 @@ components (id, name, type, category, file_path, duration, created_at, updated_a
     └── public/                # Static assets
 ```
 
+## 🏗️ ARCHITECTURAL PRINCIPLES & BEST PRACTICES
+
+### Core Development Philosophy
+**"Build for Performance, Scalability, and Agility - Always"**
+
+Every feature, function, and system must be designed with these principles in mind:
+
+#### 1. **Scalability First** 🚀
+- **Generic Solutions**: Build generic utilities that handle any number of items/properties
+- **Future-Proof Design**: Code should work with features that don't exist yet
+- **No Hardcoded Values**: Avoid magic numbers, hardcoded property names, or fixed limits
+- **Dynamic Property Handling**: Use deep copying and generic inheritance patterns
+
+#### 2. **State Consistency** 🔄
+- **Complete State Capture**: Always save/restore ALL related state together
+- **Atomic Operations**: Changes should be all-or-nothing (use history/undo system)
+- **Single Source of Truth**: Avoid duplicate state that can get out of sync
+- **Comprehensive History**: Include all state variables in undo/redo system
+
+#### 3. **Performance Optimization** ⚡
+- **Efficient Updates**: Use React state patterns that minimize re-renders
+- **Lazy Loading**: Load data only when needed
+- **Memory Management**: Clean up event listeners, timeouts, and references
+- **Batch Operations**: Group related state updates together
+
+#### 4. **Agility & Maintainability** 🔧
+- **Modular Design**: Break complex features into reusable utilities
+- **Clear Separation**: Separate concerns (UI, state, business logic, persistence)
+- **Documentation**: Code should be self-documenting with clear naming
+- **Error Handling**: Graceful degradation and user-friendly error messages
+
+### Implementation Examples
+
+#### ✅ **Good: Scalable Property Inheritance**
+```typescript
+// Generic utility that handles ANY properties, current or future
+const inheritProperties = (originalItemId: string, newItemIds: string[]) => {
+  // Automatically copies ALL media properties (scale, position, opacity, etc.)
+  // Automatically copies ALL component properties (any custom settings)
+  // Works with any number of new items
+  // No hardcoded property names - completely dynamic
+}
+```
+
+#### ❌ **Bad: Hardcoded Property Copying**
+```typescript
+// NOT scalable - hardcoded property names
+const copyProperties = (original, newItem) => {
+  newItem.scale = original.scale;
+  newItem.position = original.position;
+  // Would need to update this function for every new property
+}
+```
+
+#### ✅ **Good: Automatic State Management System**
+```typescript
+// Centralized state configuration - automatically handles ALL state
+const stateConfig = {
+  timelineLayers: { getter: () => timelineLayers, setter: setTimelineLayers, default: [] },
+  timelineTabs: { getter: () => timelineTabs, setter: setTimelineTabs, default: [] },
+  mediaProperties: { getter: () => mediaProperties, setter: setMediaProperties, default: {} },
+  componentProperties: { getter: () => componentProperties, setter: setComponentProperties, default: {} },
+  selectedItems: { getter: () => Array.from(selectedItems), setter: (val: any[]) => setSelectedItems(new Set(val)), default: [] },
+  currentTime: { getter: () => currentTime, setter: setCurrentTime, default: 0 },
+  // Add new state variables here - they'll be automatically handled
+};
+
+// Automatic state capture - no manual intervention needed
+const getAllState = () => {
+  const state: any = {};
+  Object.entries(stateConfig).forEach(([key, config]) => {
+    state[key] = JSON.parse(JSON.stringify(config.getter()));
+  });
+  return state;
+};
+
+// Utility for state-changing operations - automatically saves to history
+const withHistory = (operation: () => void) => {
+  saveToHistory();
+  operation();
+};
+```
+
+#### ❌ **Bad: Manual State Management**
+```typescript
+// NOT scalable - must manually add each new state variable
+const saveToHistory = () => {
+  const currentState = {
+    timelineLayers: JSON.parse(JSON.stringify(timelineLayers)),
+    timelineTabs: JSON.parse(JSON.stringify(timelineTabs)),
+    // What about new state variables? We'll forget to add them!
+    // This causes state inconsistency and bugs
+  };
+}
+```
+
+### Scalable Development Patterns
+
+#### **1. Automatic State Management** 🔄
+**Pattern**: Centralized state configuration with automatic capture/restoration
+```typescript
+// ✅ Add new state variables here - they're automatically handled
+const stateConfig = {
+  existingState: { getter: () => existingState, setter: setExistingState, default: [] },
+  newFeature: { getter: () => newFeature, setter: setNewFeature, default: null },
+  // No need to update undo/redo, save/load, or any other state management
+};
+```
+
+#### **2. Generic Property Inheritance** 🔄
+**Pattern**: Deep copy utilities that handle any properties
+```typescript
+// ✅ Automatically inherits ALL properties, current and future
+const inheritProperties = (originalItemId: string, newItemIds: string[]) => {
+  // Works with any property type, any number of items
+  // No hardcoded property names - completely dynamic
+};
+```
+
+#### **3. Utility-First Operations** ⚡
+**Pattern**: Wrap state-changing operations with utilities
+```typescript
+// ✅ Single operation with automatic history
+const splitClip = (itemId: string, layerId: string, splitTime: number) => {
+  withHistory(() => {
+    // All the split logic here
+    // History is automatically saved before the operation
+  });
+};
+
+// ✅ Batch operations with single history save
+const complexOperation = () => {
+  withBatchHistory([
+    () => setTimelineLayers(newLayers),
+    () => setMediaProperties(newProperties),
+    () => setComponentProperties(newComponentProperties)
+  ]);
+};
+```
+
+#### **4. Future-Proof Function Design** 🚀
+**Pattern**: Functions that work with data that doesn't exist yet
+```typescript
+// ✅ Generic function that handles any item type
+const processItems = (items: any[], processor: (item: any) => any) => {
+  return items.map(processor);
+};
+
+// ✅ Property access that works with any item structure
+const getItemName = (item: any) => {
+  return item.asset?.name || item.component?.name || 'Unknown Item';
+};
+```
+
+### Code Quality Standards
+
+#### **Function Design**
+- **Single Responsibility**: Each function should do one thing well
+- **Pure Functions**: Avoid side effects when possible
+- **Generic Parameters**: Use generic types and parameters
+- **Clear Naming**: Function names should describe what they do
+- **Future-Proof**: Design for data that doesn't exist yet
+
+#### **State Management**
+- **Immutable Updates**: Always create new objects/arrays, don't mutate
+- **Batch Updates**: Group related state changes together
+- **Consistent Patterns**: Use the same patterns throughout the codebase
+- **Error Boundaries**: Handle errors gracefully
+- **Automatic Capture**: Use centralized state management system
+
+#### **Performance Considerations**
+- **Memoization**: Use React.memo, useMemo, useCallback appropriately
+- **Lazy Loading**: Load data only when needed
+- **Efficient Rendering**: Minimize unnecessary re-renders
+- **Memory Leaks**: Clean up subscriptions and event listeners
+- **Batch Operations**: Use withBatchHistory for multiple state changes
+
+### Testing & Validation
+
+#### **Every Feature Must:**
+1. **Work with existing data** (backward compatibility)
+2. **Work with future data** (forward compatibility)
+3. **Handle edge cases** (empty states, errors, limits)
+4. **Maintain state consistency** (undo/redo works correctly)
+5. **Perform well** (no unnecessary re-renders or API calls)
+
+#### **Code Review Checklist**
+- [ ] Is this solution generic and reusable?
+- [ ] Does it handle edge cases gracefully?
+- [ ] Is the state management consistent?
+- [ ] Are there any hardcoded values that should be dynamic?
+- [ ] Does it follow established patterns in the codebase?
+- [ ] Is the error handling comprehensive?
+- [ ] Will this scale with future features?
+
 ## Key Decisions Made
 1. **Database**: Switched from Firebase to PostgreSQL due to corporate Google account restrictions
 2. **Deployment**: Using Heroku due to Salesforce access
 3. **Authentication**: Using `tjg-salesforce` Git user
 4. **Architecture**: Hybrid microservices with API-first approach
+5. **Development Philosophy**: Build for Performance, Scalability, and Agility - Always
 
 ## Environment Variables (Backend)
 ```bash
