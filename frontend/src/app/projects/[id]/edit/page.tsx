@@ -674,7 +674,25 @@ export default function ProjectEditor() {
     const layer = timelineLayers.find(l => l.id === layerId);
     if (!layer) return null;
 
-    const otherItems = layer.items.filter(item => item.id !== itemId);
+    // Filter items based on current active tab to avoid cross-tab collisions
+    let layerItems = layer.items;
+    
+    // Find the active tab data
+    const activeTabData = timelineTabs.find(tab => tab.id === currentActiveTab);
+    
+    if (currentActiveTab === 'main-video') {
+      // Main video shows items not in any group
+      const allGroupItems = timelineTabs
+        .filter(tab => tab.id !== 'main-video')
+        .flatMap(tab => (tab as any).items || []);
+      layerItems = layer.items.filter(item => !allGroupItems.includes(item.id));
+    } else if (activeTabData) {
+      // Group tabs show only items in that group
+      const groupItems = (activeTabData as any).items || [];
+      layerItems = layer.items.filter(item => groupItems.includes(item.id));
+    }
+
+    const otherItems = layerItems.filter(item => item.id !== itemId);
     const newEndTime = newStartTime + duration;
 
     // Calculate snap threshold based on timeline width
