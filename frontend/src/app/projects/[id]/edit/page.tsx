@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { PlayIcon, PauseIcon, TrashIcon, ArrowLeftIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
+import { PlayIcon, PauseIcon, TrashIcon, ArrowLeftIcon, ArrowDownTrayIcon, ScissorsIcon } from '@heroicons/react/24/outline';
 import { Project, Component, TimelineItem } from '@/types';
 import { apiEndpoints } from '@/lib/api';
 import ComponentRenderer from '@/components/ComponentRenderer';
@@ -205,12 +205,147 @@ export default function ProjectEditor() {
   const [showDownloadModal, setShowDownloadModal] = useState(false);
   const [lottieData, setLottieData] = useState<any>(null);
   
+  // Clip splitting state
+  const [hoveredItem, setHoveredItem] = useState<{itemId: string; layerId: string} | null>(null);
+  const [showScissors, setShowScissors] = useState(false);
+  
+  // Undo system state - automatic state capture
+  // Automatic undo/redo system - captures ALL state changes
+  const [history, setHistory] = useState<any[]>([]);
+  const [historyIndex, setHistoryIndex] = useState(-1);
+  const [isUndoRedoOperation, setIsUndoRedoOperation] = useState(false);
+  const [lastStateSnapshot, setLastStateSnapshot] = useState<any>(null);
+  
+  // Drag vs click detection
+  const [justDragged, setJustDragged] = useState(false);
+  
   // Component properties state
   const [componentProperties, setComponentProperties] = useState<{[key: string]: any}>({});
   
   // Media properties state
   const [mediaProperties, setMediaProperties] = useState<{[key: string]: any}>({});
   const [selectedMediaItem, setSelectedMediaItem] = useState<any>(null);
+
+  // ===== AUTOMATIC UNDO/REDO SYSTEM =====
+  // This system automatically captures ALL state changes without manual intervention
+  
+  // Define all state variables that should be tracked for undo/redo
+  const stateConfig = {
+    // Core timeline state
+    timelineLayers: { getter: () => timelineLayers, setter: setTimelineLayers, default: [] },
+    timelineTabs: { getter: () => timelineTabs, setter: setTimelineTabs, default: [] },
+    currentActiveTab: { getter: () => currentActiveTab, setter: setCurrentActiveTab, default: 'main-video' },
+    
+    // Properties state
+    mediaProperties: { getter: () => mediaProperties, setter: setMediaProperties, default: {} },
+    componentProperties: { getter: () => componentProperties, setter: setComponentProperties, default: {} },
+    
+    // Selection state
+    selectedItems: { getter: () => Array.from(selectedItems), setter: (val: any[]) => setSelectedItems(new Set(val)), default: [] },
+    selectedMediaItem: { getter: () => selectedMediaItem, setter: setSelectedMediaItem, default: null },
+    selectedTimelineItem: { getter: () => selectedTimelineItem, setter: setSelectedTimelineItem, default: null },
+    
+    // UI state
+    currentTime: { getter: () => currentTime, setter: setCurrentTime, default: 0 },
+    timelineZoom: { getter: () => timelineZoom, setter: setTimelineZoom, default: 1 },
+    isPlaying: { getter: () => isPlaying, setter: setIsPlaying, default: false },
+    
+    // Add new state variables here - they'll be automatically handled
+  };
+
+  // Capture current state snapshot
+  const captureStateSnapshot = () => {
+    const snapshot: any = {};
+    Object.entries(stateConfig).forEach(([key, config]) => {
+      snapshot[key] = JSON.parse(JSON.stringify(config.getter()));
+    });
+    return snapshot;
+  };
+
+  // Restore state from snapshot
+  const restoreStateSnapshot = (snapshot: any) => {
+    Object.entries(stateConfig).forEach(([key, config]) => {
+      const value = snapshot[key] !== undefined ? snapshot[key] : config.default;
+      config.setter(value);
+    });
+  };
+
+  // Save current state to history
+  const saveToHistory = () => {
+    if (isUndoRedoOperation) return; // Don't save during undo/redo operations
+    
+    const currentSnapshot = captureStateSnapshot();
+    
+    // Only save if state has actually changed
+    if (lastStateSnapshot && JSON.stringify(currentSnapshot) === JSON.stringify(lastStateSnapshot)) {
+      return;
+    }
+    
+    const newHistory = history.slice(0, historyIndex + 1);
+    newHistory.push(currentSnapshot);
+    
+    // Limit history to 100 states to prevent memory issues
+    if (newHistory.length > 100) {
+      newHistory.shift();
+    } else {
+      setHistoryIndex(historyIndex + 1);
+    }
+    
+    setHistory(newHistory);
+    setLastStateSnapshot(currentSnapshot);
+  };
+
+  // Undo function
+  const undo = () => {
+    if (historyIndex > 0) {
+      setIsUndoRedoOperation(true);
+      const newIndex = historyIndex - 1;
+      const state = history[newIndex];
+      restoreStateSnapshot(state);
+      setHistoryIndex(newIndex);
+      setLastStateSnapshot(state);
+      setTimeout(() => setIsUndoRedoOperation(false), 0);
+    }
+  };
+
+  // Redo function
+  const redo = () => {
+    if (historyIndex < history.length - 1) {
+      setIsUndoRedoOperation(true);
+      const newIndex = historyIndex + 1;
+      const state = history[newIndex];
+      restoreStateSnapshot(state);
+      setHistoryIndex(newIndex);
+      setLastStateSnapshot(state);
+      setTimeout(() => setIsUndoRedoOperation(false), 0);
+    }
+  };
+
+  // Auto-save state changes with debouncing
+  useEffect(() => {
+    if (isUndoRedoOperation) return;
+    
+    const timeoutId = setTimeout(() => {
+      saveToHistory();
+    }, 100); // Debounce to avoid too many saves
+    
+    return () => clearTimeout(timeoutId);
+  }, [
+    timelineLayers, timelineTabs, currentActiveTab, 
+    mediaProperties, componentProperties, 
+    selectedItems, selectedMediaItem, selectedTimelineItem,
+    currentTime, timelineZoom, isPlaying
+  ]);
+
+  // Initialize history with first state
+  useEffect(() => {
+    if (timelineLayers.length > 0 && history.length === 0) {
+      const initialState = captureStateSnapshot();
+      setHistory([initialState]);
+      setHistoryIndex(0);
+      setLastStateSnapshot(initialState);
+    }
+  }, [timelineLayers.length, history.length]);
   
   const timelineRef = useRef<HTMLDivElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
@@ -224,8 +359,130 @@ export default function ProjectEditor() {
     return item.type === 'media' || item.asset !== undefined;
   };
 
+
+
+  // Click to move scrubber to item position
+  const handleItemClick = (item: any, event: React.MouseEvent) => {
+    // Calculate click position within the item
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    const clickX = event.clientX - rect.left;
+    const itemWidth = rect.width;
+    const clickProgress = clickX / itemWidth;
+    
+    // Calculate the time position within the item
+    const timeInItem = clickProgress * item.duration;
+    const newTime = item.start_time + timeInItem;
+    
+    setCurrentTime(Math.max(0, Math.min(newTime, totalDuration)));
+  };
+
+  // Utility function for deep copying properties (scalable approach)
+  const deepCopyProperties = (originalProperties: any) => {
+    if (!originalProperties) return null;
+    return JSON.parse(JSON.stringify(originalProperties)); // Deep copy
+  };
+
+  // Utility function to inherit all properties from original item to new items
+  const inheritProperties = (originalItemId: string, newItemIds: string[]) => {
+    // Copy media properties (if they exist)
+    const originalMediaProperties = mediaProperties[originalItemId];
+    if (originalMediaProperties) {
+      const copiedProperties = deepCopyProperties(originalMediaProperties);
+      setMediaProperties(prev => {
+        const newProps = { ...prev };
+        newItemIds.forEach(id => {
+          newProps[id] = copiedProperties;
+        });
+        return newProps;
+      });
+    }
+    
+    // Copy component properties (if they exist)
+    const originalComponentProperties = componentProperties[originalItemId];
+    if (originalComponentProperties) {
+      const copiedProperties = deepCopyProperties(originalComponentProperties);
+      setComponentProperties(prev => {
+        const newProps = { ...prev };
+        newItemIds.forEach(id => {
+          newProps[id] = copiedProperties;
+        });
+        return newProps;
+      });
+    }
+  };
+
+  // Clip splitting functionality
+  const splitClip = (itemId: string, layerId: string, splitTime: number) => {
+      // Find which group (if any) contains this item
+      const containingGroup = timelineTabs.find(tab => 
+        tab.type === 'group' && (tab as any).items && (tab as any).items.includes(itemId)
+      );
+      
+      // Generate unique IDs for the split parts
+      const timestamp = Date.now();
+      const firstPartId = `${itemId}_part1_${timestamp}`;
+      const secondPartId = `${itemId}_part2_${timestamp}`;
+      
+      setTimelineLayers(prev => prev.map(layer => {
+        if (layer.id !== layerId) return layer;
+        
+        return {
+          ...layer,
+          items: layer.items.flatMap(item => {
+            if (item.id !== itemId) return [item];
+            
+            // Can't split if time is at the very start or end
+            if (splitTime <= item.start_time || splitTime >= item.start_time + item.duration) {
+              return [item];
+            }
+            
+            // Calculate split point within the item
+            const timeIntoItem = splitTime - item.start_time;
+            
+            // Create two new items with all properties preserved
+            const firstPart = {
+              ...item,
+              id: firstPartId,
+              duration: timeIntoItem
+            };
+            
+            const secondPart = {
+              ...item,
+              id: secondPartId,
+              start_time: splitTime,
+              duration: item.duration - timeIntoItem
+            };
+            
+            return [firstPart, secondPart];
+          })
+        };
+      }));
+      
+      // Inherit ALL properties from original item to both split parts (scalable approach)
+      // This automatically handles any current or future properties without code changes
+      inheritProperties(itemId, [firstPartId, secondPartId]);
+      
+      // If the item was in a group, add the new parts to the same group
+      if (containingGroup) {
+        setTimelineTabs(prev => prev.map(tab => {
+          if (tab.id === containingGroup.id) {
+            return {
+              ...tab,
+              items: [
+                ...(tab as any).items.filter((id: string) => id !== itemId), // Remove original
+                firstPartId,
+                secondPartId
+              ]
+            };
+          }
+          return tab;
+        }));
+      }
+  };
+
   // Group management functions
   const createNewGroup = (selectedItemIds: string[], groupName: string) => {
+    
     const groupId = `group_${Date.now()}`;
     const newGroup = {
       id: groupId,
@@ -535,7 +792,44 @@ export default function ProjectEditor() {
     setDragPreview(null);
   };
 
+  // Move item from one layer to another
+  const moveItemToLayer = (itemId: string, fromLayerId: string, toLayerId: string, finalStartTime: number) => {
+    const item = timelineLayers
+      .find(l => l.id === fromLayerId)
+      ?.items.find(i => i.id === itemId);
+    
+    if (!item) return;
+
+    // Check for collisions in the target layer
+    const collision = checkCollision(itemId, toLayerId, finalStartTime, item.duration);
+    
+    setTimelineLayers(prev => prev.map(layer => {
+      if (layer.id === fromLayerId) {
+        // Remove item from source layer
+        return {
+          ...layer,
+          items: layer.items.filter(i => i.id !== itemId)
+        };
+      } else if (layer.id === toLayerId) {
+        // Add item to target layer
+        const newItem = { 
+          ...item, 
+          start_time: collision?.snapTime || finalStartTime,
+          layerId: toLayerId 
+        };
+        return {
+          ...layer,
+          items: [...layer.items, newItem]
+        };
+      }
+      return layer;
+    }));
+
+    setDragPreview(null);
+  };
+
   const ungroupGroup = (groupId: string) => {
+    
     // Find the group item
     const groupItem = timelineLayers
       .find(layer => layer.id === 'group-layer')
@@ -588,6 +882,22 @@ export default function ProjectEditor() {
     }
   };
 
+  // Clear selection when clicking on blank timeline areas
+  const handleTimelineClick = (e: React.MouseEvent) => {
+    // Check if we clicked on a timeline item (has data-group-id or is absolute positioned)
+    const target = e.target as HTMLElement;
+    const isTimelineItem = target.closest('[data-group-id]') || 
+                          target.closest('.absolute') ||
+                          target.closest('.group');
+    
+    // Only clear selection if we didn't click on a timeline item
+    if (!isTimelineItem) {
+      setSelectedItems(new Set());
+      setSelectedMediaItem(null);
+      setSelectedTimelineItem(null);
+    }
+  };
+
   const clearSelection = () => {
     setSelectedItems(new Set());
   };
@@ -616,7 +926,13 @@ export default function ProjectEditor() {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey) {
-        if (e.key === 'g' && !e.shiftKey) {
+        if (e.key === 'z' && !e.shiftKey) {
+          e.preventDefault();
+          undo();
+        } else if (e.key === 'z' && e.shiftKey) {
+          e.preventDefault();
+          redo();
+        } else if (e.key === 'g' && !e.shiftKey) {
           e.preventDefault();
           if (selectedItems.size > 0) {
             // Use selected item IDs directly instead of converting to layer IDs
@@ -777,6 +1093,8 @@ export default function ProjectEditor() {
     calculateTotalDuration(timeline);
   }, [timelineLayers]);
 
+  // Save initial state to history when timeline loads
+
   // Keyboard shortcuts for timeline control
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -855,6 +1173,9 @@ export default function ProjectEditor() {
               })
             }));
             setTimelineLayers(migratedLayers);
+          }
+          if (projectData.settings.timelineTabs) {
+            setTimelineTabs(projectData.settings.timelineTabs);
           }
           if (projectData.settings.timelineZoom) {
             setTimelineZoom(projectData.settings.timelineZoom);
@@ -988,12 +1309,40 @@ export default function ProjectEditor() {
     const clickX = e.clientX - timelineRect.left;
     const clickOffset = clickX - itemStartX; // Offset from the start of the item
     
-    setIsDraggingItem({
-      itemId: item.id,
-      layerId,
-      startX: clickOffset, // Store the offset from item start
-      startTime: item.start_time
-    });
+    // Store initial mouse position for drag detection
+    const initialMouseX = e.clientX;
+    const initialMouseY = e.clientY;
+    let isDrag = false;
+    const dragThreshold = 5; // pixels of movement before considering it a drag
+    
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const deltaX = Math.abs(moveEvent.clientX - initialMouseX);
+      const deltaY = Math.abs(moveEvent.clientY - initialMouseY);
+      
+      // Only start dragging if mouse has moved beyond threshold
+      if ((deltaX > dragThreshold || deltaY > dragThreshold) && !isDrag) {
+        isDrag = true;
+        setJustDragged(true);
+        setIsDraggingItem({
+          itemId: item.id,
+          layerId,
+          startX: clickOffset, // Store the offset from item start
+          startTime: item.start_time
+        });
+      }
+    };
+    
+    const handleMouseUp = () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      
+      // If it wasn't a drag, it was just a click - don't do anything here
+      // The onClick handler will handle the selection
+    };
+    
+    // Add temporary listeners for this specific mouse down
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
     
     e.preventDefault();
   };
@@ -1003,17 +1352,81 @@ export default function ProjectEditor() {
     
     const timelineRect = timelineRef.current.getBoundingClientRect();
     const x = e.clientX - timelineRect.left;
+    const y = e.clientY - timelineRect.top;
+    
     // Calculate new start time based on where the mouse is, minus the click offset
     const newStartTime = Math.max(0, (x - isDraggingItem.startX) / timelineRect.width * totalDuration);
     
-    handleItemDrag(isDraggingItem.itemId, isDraggingItem.layerId, newStartTime);
+    // Calculate target layer using correct layer heights
+    const mainLayerHeight = 80; // Height of main component layer
+    const mediaLayerHeight = 124; // 44px header + 64px content + 16px mb-4
+    let targetLayerIndex = 0;
+    
+    if (y < mainLayerHeight) {
+      // In main component layer
+      targetLayerIndex = 0;
+    } else {
+      // In media layers
+      const adjustedY = y - mainLayerHeight;
+      targetLayerIndex = Math.max(0, Math.floor(adjustedY / mediaLayerHeight));
+    }
+    
+    const targetLayer = timelineLayers[targetLayerIndex];
+    
+    if (targetLayer && targetLayer.id !== isDraggingItem.layerId) {
+      // Moving to a different layer - update drag preview
+      setDragPreview({
+        x: 0,
+        y: 0,
+        time: newStartTime,
+        layer: targetLayerIndex,
+        itemId: isDraggingItem.itemId,
+        layerId: targetLayer.id,
+        startTime: newStartTime,
+        duration: 0
+      });
+    } else {
+      // Moving within the same layer - always call handleItemDrag for proper collision detection
+      handleItemDrag(isDraggingItem.itemId, isDraggingItem.layerId, newStartTime);
+    }
   };
 
-  const handleGlobalMouseUp = () => {
-    if (!isDraggingItem || !dragPreview || dragPreview.startTime === undefined) return;
+  const handleGlobalMouseUp = (e: MouseEvent) => {
+    if (!isDraggingItem || !timelineRef.current) return;
     
-    handleItemDrop(isDraggingItem.itemId, isDraggingItem.layerId, dragPreview.startTime);
+    const timelineRect = timelineRef.current.getBoundingClientRect();
+    const y = e.clientY - timelineRect.top;
+    
+    // Calculate target layer using correct layer heights
+    const mainLayerHeight = 80; // Height of main component layer
+    const mediaLayerHeight = 124; // 44px header + 64px content + 16px mb-4
+    let targetLayerIndex = 0;
+    
+    if (y < mainLayerHeight) {
+      // In main component layer
+      targetLayerIndex = 0;
+    } else {
+      // In media layers
+      const adjustedY = y - mainLayerHeight;
+      targetLayerIndex = Math.max(0, Math.floor(adjustedY / mediaLayerHeight));
+    }
+    
+    // Find the target layer
+    const targetLayer = timelineLayers[targetLayerIndex];
+    const finalStartTime = dragPreview?.startTime || isDraggingItem.startTime;
+    
+    if (targetLayer && targetLayer.id !== isDraggingItem.layerId) {
+      // Moving to a different layer
+      moveItemToLayer(isDraggingItem.itemId, isDraggingItem.layerId, targetLayer.id, finalStartTime);
+    } else {
+      // Moving within the same layer (or no valid target layer)
+      handleItemDrop(isDraggingItem.itemId, isDraggingItem.layerId, finalStartTime);
+    }
+    
     setIsDraggingItem(null);
+    
+    // Reset the justDragged flag after a short delay to allow click handlers to check it
+    setTimeout(() => setJustDragged(false), 100);
   };
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -1231,6 +1644,7 @@ export default function ProjectEditor() {
     
     const timelineRect = timelineRef.current?.getBoundingClientRect();
     if (!timelineRect) return;
+    
 
     const x = e.clientX - timelineRect.left;
     const y = e.clientY - timelineRect.top;
@@ -1567,6 +1981,7 @@ export default function ProjectEditor() {
         settings: {
           mediaAssets,
           timelineLayers: timelineLayersWithProperties,
+          timelineTabs, // Save timeline tabs for group persistence
           timelineZoom,
           mediaProperties,
           componentProperties // Also save componentProperties separately for easier access
@@ -2614,6 +3029,7 @@ export default function ProjectEditor() {
               className="border-2 border-dashed border-gray-300 rounded-lg p-4 overflow-x-auto relative"
               onDragOver={handleDragOver}
               onDrop={handleDrop}
+              onClick={handleTimelineClick}
             >
               {/* Drag Outline Preview */}
               {dragOutline && (
@@ -2640,6 +3056,7 @@ export default function ProjectEditor() {
                 width: `${100 * timelineZoom}%`,
                 minWidth: '100%'
               }}
+              onClick={handleTimelineClick}
               >
                 {/* Time Markers */}
                 <div className="relative h-8 mb-2 border-b border-gray-200">
@@ -2857,6 +3274,11 @@ export default function ProjectEditor() {
                           onDragStart={!isGroup ? (e) => handleMediaItemDragStart(e, item, layer.id) : undefined}
                           onMouseDown={!isGroup ? (e) => handleItemMouseDown(e, item, layer.id) : undefined}
                           onClick={(e) => {
+                            // Skip click action if we just finished dragging
+                            if (justDragged) {
+                              return;
+                            }
+                            
                             if (isGroup) {
                               // For groups, single click selects, double click opens
                               if (e.detail === 2) {
@@ -2865,12 +3287,39 @@ export default function ProjectEditor() {
                                 toggleItemSelection(item.id, e);
                               }
                             } else {
+                              // Move scrubber to clicked position
+                              handleItemClick(item, e);
+                              
+                              // Check if item is currently selected before toggling
+                              const wasSelected = selectedItems.has(item.id);
+                              
+                              // Toggle selection (this will deselect if already selected)
                               toggleItemSelection(item.id, e);
-                              setSelectedMediaItem(item);
-                              setSelectedTimelineItem(null);
-                              setShowComponentLibrary(false);
-                              setShowMediaLibrary(false);
+                              
+                              if (wasSelected) {
+                                // If it was selected, now it's deselected - clear selection
+                                setSelectedMediaItem(null);
+                                setSelectedTimelineItem(null);
+                              } else {
+                                // If it wasn't selected, now it's selected - set as selected media item
+                                setSelectedMediaItem(item);
+                                setSelectedTimelineItem(null);
+                                setShowComponentLibrary(false);
+                                setShowMediaLibrary(false);
+                              }
                             }
+                          }}
+                          onMouseEnter={() => {
+                            if (!isGroup) {
+                              setHoveredItem({itemId: item.id, layerId: layer.id});
+                              // Show scissors if scrubber is within this item
+                              const scrubberInItem = currentTime >= item.start_time && currentTime <= item.start_time + item.duration;
+                              setShowScissors(scrubberInItem);
+                            }
+                          }}
+                          onMouseLeave={() => {
+                            setHoveredItem(null);
+                            setShowScissors(false);
                           }}
                           className={`absolute top-0 h-full rounded-lg p-3 cursor-move transition-colors group ${
                             isGroup 
@@ -2953,6 +3402,23 @@ export default function ProjectEditor() {
                             title="Drag to resize end"
                           >
                             <div className="absolute right-0 top-1/2 transform -translate-y-1/2 w-1 h-4 bg-white rounded-sm opacity-50" />
+                          </div>
+                        )}
+                        
+                        {/* Scissors icon for clip splitting */}
+                        {!isGroup && showScissors && hoveredItem?.itemId === item.id && hoveredItem?.layerId === layer.id && (
+                          <div
+                            className="absolute top-1/2 transform -translate-y-1/2 -translate-x-1/2 w-8 h-8 bg-red-500 rounded-full flex items-center justify-center cursor-pointer hover:bg-red-600 transition-colors z-50"
+                            style={{
+                              left: `${((currentTime - item.start_time) / item.duration) * 100}%`
+                            }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              splitClip(item.id, layer.id, currentTime);
+                            }}
+                            title="Split clip at current time"
+                          >
+                            <ScissorsIcon className="w-4 h-4 text-white" />
                           </div>
                         )}
                       </div>
