@@ -19,7 +19,11 @@ function VideoTimelineControl({
   duration, 
   currentTime, 
   isPlaying, 
-  className 
+  className,
+  videoStartTime = 0,
+  videoEndTime,
+  freezeFrame = false,
+  freezeFrameTime = 0
 }: {
   src: string;
   startTime: number;
@@ -27,6 +31,10 @@ function VideoTimelineControl({
   currentTime: number;
   isPlaying: boolean;
   className: string;
+  videoStartTime?: number;
+  videoEndTime?: number;
+  freezeFrame?: boolean;
+  freezeFrameTime?: number;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -38,26 +46,27 @@ function VideoTimelineControl({
     const videoEndTime = startTime + duration;
     
     if (currentTime >= startTime && currentTime <= videoEndTime) {
-      const videoProgress = (currentTime - startTime) / duration;
-      
-      // If the timeline duration is longer than the video duration, hold the last frame
-      if (duration > video.duration) {
-        const videoProgress = Math.min(1, (currentTime - startTime) / video.duration);
-        const targetTime = videoProgress * video.duration;
-        
-        if (isFinite(targetTime) && targetTime >= 0 && targetTime <= video.duration) {
-          video.currentTime = targetTime;
+      if (freezeFrame) {
+        // Freeze frame behavior - always show the freeze frame time
+        // freezeFrameTime is already the absolute video time where we should freeze
+        const targetVideoTime = freezeFrameTime;
+        if (isFinite(targetVideoTime) && targetVideoTime >= 0 && targetVideoTime <= video.duration) {
+          video.currentTime = targetVideoTime;
         }
       } else {
-        // Normal playback for videos that fit within the timeline duration
-        const targetTime = videoProgress * video.duration;
+        // Normal video playback
+        const videoProgress = (currentTime - startTime) / duration;
         
-        if (isFinite(targetTime) && targetTime >= 0 && targetTime <= video.duration) {
-          video.currentTime = targetTime;
+        // Calculate the actual video time based on cropping
+        const actualVideoDuration = videoEndTime ? videoEndTime - videoStartTime : video.duration;
+        const targetVideoTime = videoStartTime + (videoProgress * actualVideoDuration);
+        
+        if (isFinite(targetVideoTime) && targetVideoTime >= 0 && targetVideoTime <= video.duration) {
+          video.currentTime = targetVideoTime;
         }
       }
     }
-  }, [currentTime, startTime, duration]);
+  }, [currentTime, startTime, duration, videoStartTime, videoEndTime, freezeFrame, freezeFrameTime]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -218,6 +227,9 @@ export default function ProjectEditor() {
   
   // Drag vs click detection
   const [justDragged, setJustDragged] = useState(false);
+  
+  // Freeze frame functionality
+  const [isOptionHeld, setIsOptionHeld] = useState(false);
   
   // Component properties state
   const [componentProperties, setComponentProperties] = useState<{[key: string]: any}>({});
@@ -439,18 +451,28 @@ export default function ProjectEditor() {
             // Calculate split point within the item
             const timeIntoItem = splitTime - item.start_time;
             
-            // Create two new items with all properties preserved
+            // Create two new items with proper video cropping to maintain original speed
             const firstPart = {
               ...item,
               id: firstPartId,
-              duration: timeIntoItem
+              duration: timeIntoItem,
+              // For video items, add crop information to maintain original speed
+              ...(isMediaItem(item) && item.asset?.type === 'video' ? {
+                videoStartTime: 0, // First part starts from beginning of video
+                videoEndTime: timeIntoItem // First part ends at the split point
+              } : {})
             };
             
             const secondPart = {
               ...item,
               id: secondPartId,
               start_time: splitTime,
-              duration: item.duration - timeIntoItem
+              duration: item.duration - timeIntoItem,
+              // For video items, add crop information to maintain original speed
+              ...(isMediaItem(item) && item.asset?.type === 'video' ? {
+                videoStartTime: timeIntoItem, // Second part starts from split point
+                videoEndTime: item.duration // Second part ends at original end
+              } : {})
             };
             
             return [firstPart, secondPart];
@@ -921,6 +943,29 @@ export default function ProjectEditor() {
       };
     }
   }, [isDraggingItem, dragPreview]);
+
+  // Track Option key for freeze frame functionality
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Alt') {
+        setIsOptionHeld(true);
+      }
+    };
+    
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.key === 'Alt') {
+        setIsOptionHeld(false);
+      }
+    };
+    
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, []);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -1620,11 +1665,39 @@ export default function ProjectEditor() {
         layer.id === layerId 
           ? {
               ...layer,
-              items: layer.items.map(mediaItem => 
-                mediaItem.id === item.id 
-                  ? { ...mediaItem, start_time: newStartTime, duration: newDuration }
-                  : mediaItem
-              )
+              items: layer.items.map(mediaItem => {
+                if (mediaItem.id !== item.id) return mediaItem;
+                
+                // For video items with Option held, add freeze-frame behavior
+                if (isOptionHeld && isMediaItem(mediaItem) && mediaItem.asset?.type === 'video') {
+                  const updatedItem = { ...mediaItem, start_time: newStartTime, duration: newDuration };
+                  
+                  if (direction === 'end') {
+                    // Extending end with freeze-frame - freeze at the last visible frame
+                    // For split videos, freeze at the split point (videoEndTime)
+                    // For unsplit videos, freeze at the original duration
+                    const freezeFrameTime = (mediaItem as any).videoEndTime || mediaItem.duration;
+                    return {
+                      ...updatedItem,
+                      freezeFrame: true,
+                      freezeFrameTime: freezeFrameTime
+                    };
+                  } else {
+                    // Extending start with freeze-frame - freeze at the first visible frame
+                    // For split videos, freeze at the split point (videoStartTime)
+                    // For unsplit videos, freeze at the beginning (0)
+                    const freezeFrameTime = (mediaItem as any).videoStartTime || 0;
+                    return {
+                      ...updatedItem,
+                      freezeFrame: true,
+                      freezeFrameTime: freezeFrameTime
+                    };
+                  }
+                }
+                
+                // Normal resize behavior
+                return { ...mediaItem, start_time: newStartTime, duration: newDuration };
+              })
             }
           : layer
       ));
@@ -2865,6 +2938,10 @@ export default function ProjectEditor() {
                               currentTime={currentTime}
                               isPlaying={isPlaying}
                               className="w-full h-full object-contain rounded-lg"
+                              videoStartTime={(mediaItem as any).videoStartTime || 0}
+                              videoEndTime={(mediaItem as any).videoEndTime}
+                              freezeFrame={(mediaItem as any).freezeFrame || false}
+                              freezeFrameTime={(mediaItem as any).freezeFrameTime || 0}
                             />
                             {/* Extension marker - show when video is extended beyond original duration */}
                             {isMediaItem(mediaItem) && mediaItem.asset.duration && mediaItem.duration > mediaItem.asset.duration && (
@@ -3383,25 +3460,54 @@ export default function ProjectEditor() {
                           />
                         )}
                         
+                        {/* Freeze frame indicator - show where freeze frame starts */}
+                        {!isGroup && isMediaItem(item) && item.asset.type === 'video' && (item as any).freezeFrame && (
+                          <div
+                            className="absolute top-0 bottom-0 w-0.5 bg-purple-400 border-l border-purple-500"
+                            style={{
+                              left: `${((item as any).freezeFrameTime / item.duration) * 100}%`
+                            }}
+                            title={`Freeze frame starts at ${formatTime(item.start_time + (item as any).freezeFrameTime)}`}
+                          />
+                        )}
+                        
                         {/* Start resize handle for images and videos */}
                         {!isGroup && isMediaItem(item) && (item.asset.type === 'image' || item.asset.type === 'video') && (
                           <div
-                            className="absolute left-0 top-0 w-2 h-full bg-blue-500 opacity-0 group-hover:opacity-100 cursor-ew-resize transition-opacity hover:bg-blue-600"
+                            className={`absolute left-0 top-0 w-2 h-full opacity-0 group-hover:opacity-100 cursor-ew-resize transition-opacity ${
+                              isOptionHeld && item.asset.type === 'video' 
+                                ? 'bg-purple-500 hover:bg-purple-600' 
+                                : 'bg-blue-500 hover:bg-blue-600'
+                            }`}
                             onMouseDown={(e) => handleMediaResize(e, item, layer.id, 'start')}
-                            title="Drag to resize start"
+                            title={isOptionHeld && item.asset.type === 'video' ? "Hold Option + drag for freeze-frame" : "Drag to resize start"}
                           >
                             <div className="absolute left-0 top-1/2 transform -translate-y-1/2 w-1 h-4 bg-white rounded-sm opacity-50" />
+                            {isOptionHeld && item.asset.type === 'video' && (
+                              <div className="absolute left-0 top-1/2 transform -translate-y-1/2 -translate-x-1 text-xs text-white font-bold">
+                                ⏸️
+                              </div>
+                            )}
                           </div>
                         )}
                         
                         {/* End resize handle for images and videos */}
                         {!isGroup && isMediaItem(item) && (item.asset.type === 'image' || item.asset.type === 'video') && (
                           <div
-                            className="absolute right-0 top-0 w-2 h-full bg-blue-500 opacity-0 group-hover:opacity-100 cursor-ew-resize transition-opacity hover:bg-blue-600"
+                            className={`absolute right-0 top-0 w-2 h-full opacity-0 group-hover:opacity-100 cursor-ew-resize transition-opacity ${
+                              isOptionHeld && item.asset.type === 'video' 
+                                ? 'bg-purple-500 hover:bg-purple-600' 
+                                : 'bg-blue-500 hover:bg-blue-600'
+                            }`}
                             onMouseDown={(e) => handleMediaResize(e, item, layer.id, 'end')}
-                            title="Drag to resize end"
+                            title={isOptionHeld && item.asset.type === 'video' ? "Hold Option + drag for freeze-frame" : "Drag to resize end"}
                           >
                             <div className="absolute right-0 top-1/2 transform -translate-y-1/2 w-1 h-4 bg-white rounded-sm opacity-50" />
+                            {isOptionHeld && item.asset.type === 'video' && (
+                              <div className="absolute right-0 top-1/2 transform -translate-y-1/2 translate-x-1 text-xs text-white font-bold">
+                                ⏸️
+                              </div>
+                            )}
                           </div>
                         )}
                         
