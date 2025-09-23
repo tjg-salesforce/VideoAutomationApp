@@ -47,16 +47,32 @@ function VideoTimelineControl({
     
     if (currentTime >= startTime && currentTime <= videoEndTime) {
       if (freezeFrame) {
-        // Freeze frame behavior - always show the freeze frame time
-        // freezeFrameTime is already the absolute video time where we should freeze
-        const targetVideoTime = freezeFrameTime;
-        if (isFinite(targetVideoTime) && targetVideoTime >= 0 && targetVideoTime <= video.duration) {
-          video.currentTime = targetVideoTime;
+        // Freeze frame behavior - only freeze the extended portion
+        // Check if we're in the extended area (beyond the original content)
+        // For freeze frame, we want to freeze at the end of the original video content
+        // The original content duration is the duration BEFORE we extended it with freeze frame
+        // We need to calculate this from the freezeFrameTime
+        const originalContentDuration = freezeFrameTime - videoStartTime;
+        const extendedStartTime = startTime + originalContentDuration;
+        
+        if (currentTime >= extendedStartTime) {
+          // We're in the extended area - show the freeze frame
+          const targetVideoTime = freezeFrameTime;
+          if (isFinite(targetVideoTime) && targetVideoTime >= 0 && targetVideoTime <= video.duration) {
+            video.currentTime = targetVideoTime;
+          }
+        } else {
+          // We're in the original content area - play normally
+          const videoProgress = (currentTime - startTime) / originalContentDuration;
+          const targetVideoTime = videoStartTime + (videoProgress * originalContentDuration);
+          if (isFinite(targetVideoTime) && targetVideoTime >= 0 && targetVideoTime <= video.duration) {
+            video.currentTime = targetVideoTime;
+          }
         }
       } else {
         // Normal video playback
-        const videoProgress = (currentTime - startTime) / duration;
-        
+      const videoProgress = (currentTime - startTime) / duration;
+      
         // Calculate the actual video time based on cropping
         const actualVideoDuration = videoEndTime ? videoEndTime - videoStartTime : video.duration;
         const targetVideoTime = videoStartTime + (videoProgress * actualVideoDuration);
@@ -503,6 +519,32 @@ export default function ProjectEditor() {
   };
 
   // Group management functions
+  // Calculate group duration based on its contents
+  const calculateGroupDuration = (itemIds: string[]) => {
+    let earliestStart = Infinity;
+    let latestEnd = 0;
+    
+    // Find all items across all layers that belong to this group
+    timelineLayers.forEach(layer => {
+      layer.items.forEach(item => {
+        if (itemIds.includes(item.id)) {
+          earliestStart = Math.min(earliestStart, item.start_time);
+          latestEnd = Math.max(latestEnd, item.start_time + item.duration);
+        }
+      });
+    });
+    
+    // Return duration and start time, or defaults if no items found
+    if (earliestStart === Infinity) {
+      return { startTime: 0, duration: 10 };
+    }
+    
+    return {
+      startTime: earliestStart,
+      duration: latestEnd - earliestStart
+    };
+  };
+
   const createNewGroup = (selectedItemIds: string[], groupName: string) => {
     
     const groupId = `group_${Date.now()}`;
@@ -513,13 +555,16 @@ export default function ProjectEditor() {
       items: selectedItemIds // Store individual item IDs instead of layer IDs
     };
 
+    // Calculate actual group duration based on contents
+    const groupTiming = calculateGroupDuration(selectedItemIds);
+
     // Add group as a timeline item in the current tab
     const groupItem = {
       id: groupId,
       name: groupName,
       type: 'group',
-      start_time: 0,
-      duration: 10, // Default duration for groups
+      start_time: groupTiming.startTime,
+      duration: groupTiming.duration,
       layerId: 'group-layer',
       isGroup: true,
       items: selectedItemIds // Store individual item IDs
@@ -1730,6 +1775,59 @@ export default function ProjectEditor() {
     document.addEventListener('mouseup', handleMouseUp);
   };
 
+  // Group resize handler
+  const handleGroupResize = (e: React.MouseEvent, item: any, layerId: string, direction: 'start' | 'end') => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const startX = e.clientX;
+    const timelineRect = timelineRef.current?.getBoundingClientRect();
+    if (!timelineRect) return;
+    
+    const timePerPixel = totalDuration / timelineRect.width;
+    const startTime = item.start_time;
+    const startDuration = item.duration;
+    
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const deltaX = moveEvent.clientX - startX;
+      const deltaTime = deltaX * timePerPixel;
+      
+      let newDuration = startDuration;
+      let newStartTime = startTime;
+      
+      if (direction === 'end') {
+        // Extending the end
+        newDuration = Math.max(1, startDuration + deltaTime); // Minimum 1 second
+      } else {
+        // Resizing the start handle
+        newStartTime = Math.max(0, startTime + deltaTime);
+        newDuration = Math.max(1, startDuration - deltaTime);
+      }
+      
+      // Update the group item in the timeline
+      setTimelineLayers(prev => prev.map(layer => 
+        layer.id === layerId 
+          ? {
+              ...layer,
+              items: layer.items.map(groupItem => 
+                groupItem.id === item.id 
+                  ? { ...groupItem, start_time: newStartTime, duration: newDuration }
+                  : groupItem
+              )
+            }
+          : layer
+      ));
+    };
+    
+    const handleMouseUp = () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+    
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  };
+
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     
@@ -1761,20 +1859,20 @@ export default function ProjectEditor() {
       const newItem: TimelineItem = {
         id: `timeline_${Date.now()}`,
         component_id: draggedComponent.id,
-        component: draggedComponent,
+          component: draggedComponent,
         start_time: startTime,
-        duration: totalDuration || 10, // Use total video duration instead of component duration
+          duration: totalDuration || 10, // Use total video duration instead of component duration
         order: 0 // Will be set by the layer system
-      };
+        };
 
-      // Set default properties for the component based on schema
-      const defaultProperties = getDefaultProperties(draggedComponent.type);
-      console.log('Default properties for', draggedComponent.type, ':', defaultProperties);
-      
-      setComponentProperties(prev => ({
-        ...prev,
-        [draggedComponent.id]: defaultProperties
-      }));
+        // Set default properties for the component based on schema
+        const defaultProperties = getDefaultProperties(draggedComponent.type);
+        console.log('Default properties for', draggedComponent.type, ':', defaultProperties);
+        
+        setComponentProperties(prev => ({
+          ...prev,
+          [draggedComponent.id]: defaultProperties
+        }));
 
       // Add to timelineLayers instead of timeline
       setTimelineLayers(prev => {
@@ -2051,7 +2149,7 @@ export default function ProjectEditor() {
       // Include component properties in the timeline items from both old timeline and new timelineLayers
       const timelineWithProperties = timeline.map(item => ({
         ...item,
-        properties: item.component?.id ? componentProperties[item.component.id] || {} : {}
+            properties: item.component?.id ? componentProperties[item.component.id] || {} : {}
       }));
 
       // Also include component properties from timelineLayers
@@ -2914,6 +3012,24 @@ export default function ProjectEditor() {
                 return layer.items.map((mediaItem) => {
                   // Skip group items in preview - they don't render content
                   if ((mediaItem as any).isGroup) return null;
+                  
+                  // Check if this item is within a group's display boundaries
+                  const groupLayer = timelineLayers.find(l => l.id === 'group-layer');
+                  const containingGroup = groupLayer?.items.find(groupItem => {
+                    if (!(groupItem as any).isGroup) return false;
+                    const groupItems = (groupItem as any).items || [];
+                    return groupItems.includes(mediaItem.id);
+                  });
+                  
+                  // If item is in a group, check if current time is within group's display boundaries
+                  if (containingGroup) {
+                    const groupStart = containingGroup.start_time;
+                    const groupEnd = containingGroup.start_time + containingGroup.duration;
+                    if (currentTime < groupStart || currentTime >= groupEnd) {
+                      return null; // Don't show content outside group boundaries
+                    }
+                  }
+                  
                   const isActive = currentTime >= mediaItem.start_time && currentTime < mediaItem.start_time + mediaItem.duration;
                   if (!isActive) return null;
                   
@@ -3202,7 +3318,7 @@ export default function ProjectEditor() {
 
 
               {/* Timeline Tabs */}
-              <div className="mb-4">
+                <div className="mb-4">
                 <div className="flex items-center space-x-1 border-b border-gray-200">
                   {timelineTabs.map((tab) => (
                     <div key={tab.id} className="relative">
@@ -3243,7 +3359,7 @@ export default function ProjectEditor() {
                               ×
                             </button>
                           )}
-                        </div>
+                      </div>
                       )}
                     </div>
                   ))}
@@ -3397,10 +3513,10 @@ export default function ProjectEditor() {
                                 setSelectedTimelineItem(null);
                               } else {
                                 // If it wasn't selected, now it's selected - set as selected media item
-                                setSelectedMediaItem(item);
-                                setSelectedTimelineItem(null);
-                                setShowComponentLibrary(false);
-                                setShowMediaLibrary(false);
+                          setSelectedMediaItem(item);
+                          setSelectedTimelineItem(null);
+                          setShowComponentLibrary(false);
+                          setShowMediaLibrary(false);
                               }
                             }
                           }}
@@ -3415,8 +3531,8 @@ export default function ProjectEditor() {
                           onMouseLeave={() => {
                             setHoveredItem(null);
                             setShowScissors(false);
-                          }}
-                          className={`absolute top-0 h-full rounded-lg p-3 cursor-move transition-colors group ${
+                        }}
+                        className={`absolute top-0 h-full rounded-lg p-3 cursor-move transition-colors group ${
                             isGroup 
                               ? selectedItems.has(item.id)
                                 ? 'bg-purple-300 text-purple-900 border-2 border-purple-500'
@@ -3424,15 +3540,15 @@ export default function ProjectEditor() {
                               : selectedItems.has(item.id)
                                 ? 'bg-blue-300 text-blue-900 border-2 border-blue-500'
                                 : selectedMediaItem?.id === item.id 
-                                ? 'bg-green-300 text-green-900' 
-                                : 'bg-green-100 text-green-900 hover:bg-green-200'
-                          }`}
-                          style={{
-                            left: `${(item.start_time / totalDuration) * 100}%`,
-                            width: `${(item.duration / totalDuration) * 100}%`,
-                            minWidth: '120px'
-                          }}
-                        >
+                            ? 'bg-green-300 text-green-900' 
+                            : 'bg-green-100 text-green-900 hover:bg-green-200'
+                        }`}
+                        style={{
+                          left: `${(item.start_time / totalDuration) * 100}%`,
+                          width: `${(item.duration / totalDuration) * 100}%`,
+                          minWidth: '120px'
+                        }}
+                      >
                           {isGroup ? (
                             <div className="flex items-center justify-between w-full">
                               <div className="flex items-center space-x-2">
@@ -3461,9 +3577,9 @@ export default function ProjectEditor() {
                               <div className="text-sm font-medium truncate">
                                 {isMediaItem(item) ? item.asset.name : isComponentItem(item) ? item.component.name : 'Unknown Item'}
                               </div>
-                              <div className="text-xs opacity-75">
-                                {formatTime(item.start_time)} - {formatTime(item.start_time + item.duration)}
-                              </div>
+                        <div className="text-xs opacity-75">
+                          {formatTime(item.start_time)} - {formatTime(item.start_time + item.duration)}
+                        </div>
                             </>
                           )}
                         
@@ -3488,6 +3604,70 @@ export default function ProjectEditor() {
                             title={`Freeze frame starts at ${formatTime(item.start_time + (item as any).freezeFrameTime)}`}
                           />
                         )}
+
+                        {/* Group content boundaries - show where actual content starts/ends */}
+                        {isGroup && (() => {
+                          const groupTiming = calculateGroupDuration((item as any).items || []);
+                          const contentStartPercent = ((groupTiming.startTime - item.start_time) / item.duration) * 100;
+                          const contentEndPercent = ((groupTiming.startTime + groupTiming.duration - item.start_time) / item.duration) * 100;
+                          
+                          // Debug logging
+                          console.log('Group boundaries:', {
+                            groupId: item.id,
+                            groupStart: item.start_time,
+                            groupDuration: item.duration,
+                            contentStart: groupTiming.startTime,
+                            contentDuration: groupTiming.duration,
+                            contentStartPercent,
+                            contentEndPercent
+                          });
+                          
+                          return (
+                            <>
+                              {/* Content start boundary */}
+                              {contentStartPercent > 0 && (
+                                <div
+                                  className="absolute top-0 bottom-0 w-0.5 bg-blue-400 border-l border-blue-500 z-10"
+                                  style={{ left: `${contentStartPercent}%` }}
+                                  title={`Content starts at ${formatTime(groupTiming.startTime)}`}
+                                />
+                              )}
+                              
+                              {/* Content end boundary */}
+                              {contentEndPercent < 100 && (
+                                <div
+                                  className="absolute top-0 bottom-0 w-0.5 bg-blue-400 border-l border-blue-500 z-10"
+                                  style={{ left: `${contentEndPercent}%` }}
+                                  title={`Content ends at ${formatTime(groupTiming.startTime + groupTiming.duration)}`}
+                                />
+                              )}
+                              
+                              {/* Dimmed area before content */}
+                              {contentStartPercent > 0 && (
+                                <div
+                                  className="absolute top-0 bottom-0 bg-gray-300 opacity-30 z-5"
+                                  style={{ 
+                                    left: '0%', 
+                                    width: `${contentStartPercent}%` 
+                                  }}
+                                  title="No content in this area"
+                                />
+                              )}
+                              
+                              {/* Dimmed area after content */}
+                              {contentEndPercent < 100 && (
+                                <div
+                                  className="absolute top-0 bottom-0 bg-gray-300 opacity-30 z-5"
+                                  style={{ 
+                                    left: `${contentEndPercent}%`, 
+                                    width: `${100 - contentEndPercent}%` 
+                                  }}
+                                  title="No content in this area"
+                                />
+                              )}
+                            </>
+                          );
+                        })()}
                         
                         {/* Start resize handle for images and videos */}
                         {!isGroup && isMediaItem(item) && (item.asset.type === 'image' || item.asset.type === 'video') && (
@@ -3524,9 +3704,32 @@ export default function ProjectEditor() {
                             {isOptionHeld && item.asset.type === 'video' && (
                               <div className="absolute right-0 top-1/2 transform -translate-y-1/2 translate-x-1 text-xs text-white font-bold">
                                 ⏸️
-                              </div>
-                            )}
                           </div>
+                        )}
+                      </div>
+                        )}
+
+                        {/* Group resize handles */}
+                        {isGroup && (
+                          <>
+                            {/* Start resize handle for groups */}
+                            <div
+                              className="absolute left-0 top-0 w-2 h-full opacity-0 group-hover:opacity-100 cursor-ew-resize transition-opacity bg-green-500 hover:bg-green-600"
+                              onMouseDown={(e) => handleGroupResize(e, item, layer.id, 'start')}
+                              title="Drag to resize group start"
+                            >
+                              <div className="absolute left-0 top-1/2 transform -translate-y-1/2 w-1 h-4 bg-white rounded-sm opacity-50" />
+                            </div>
+                            
+                            {/* End resize handle for groups */}
+                            <div
+                              className="absolute right-0 top-0 w-2 h-full opacity-0 group-hover:opacity-100 cursor-ew-resize transition-opacity bg-green-500 hover:bg-green-600"
+                              onMouseDown={(e) => handleGroupResize(e, item, layer.id, 'end')}
+                              title="Drag to resize group end"
+                            >
+                              <div className="absolute right-0 top-1/2 transform -translate-y-1/2 w-1 h-4 bg-white rounded-sm opacity-50" />
+                            </div>
+                          </>
                         )}
                         
                         {/* Scissors icon for clip splitting */}
@@ -3829,8 +4032,8 @@ export default function ProjectEditor() {
                   
                   {/* Media Properties */}
                   {selectedMediaItem.asset && (
-                    <div className="border-b border-gray-200 pb-4">
-                      <div className="space-y-4">
+                  <div className="border-b border-gray-200 pb-4">
+                    <div className="space-y-4">
                       {/* Scale */}
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">
