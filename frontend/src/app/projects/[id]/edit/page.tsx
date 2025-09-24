@@ -60,8 +60,8 @@ function VideoTimelineControl({
           const targetVideoTime = freezeFrameTime;
           if (isFinite(targetVideoTime) && targetVideoTime >= 0 && targetVideoTime <= video.duration) {
             video.currentTime = targetVideoTime;
-          }
-        } else {
+        }
+      } else {
           // We're in the original content area - play normally
           const videoProgress = (currentTime - startTime) / originalContentDuration;
           const targetVideoTime = videoStartTime + (videoProgress * originalContentDuration);
@@ -155,8 +155,9 @@ export default function ProjectEditor() {
     startTime?: number;
     duration?: number;
     swapTarget?: string;
+    isPlaceholder?: boolean;
   } | null>(null);
-  const [dragOutline, setDragOutline] = useState<{x: number, y: number, time: number, layer: number, width: number, item: any, targetTop?: number} | null>(null);
+  const [dragOutline, setDragOutline] = useState<{x: number, y: number, time: number, layer: number, width: number, item: any, targetTop?: number, isPlaceholder?: boolean} | null>(null);
   const [snapToGrid, setSnapToGrid] = useState(true);
   const [editingLayerName, setEditingLayerName] = useState<string | null>(null);
   const [editingLayerValue, setEditingLayerValue] = useState('');
@@ -374,6 +375,17 @@ export default function ProjectEditor() {
       setLastStateSnapshot(initialState);
     }
   }, [timelineLayers.length, history.length]);
+
+  // Utility function to wrap state changes with history
+  const withHistory = (fn: () => void) => {
+    fn();
+    saveToHistory();
+  };
+
+  // Utility function to remove empty layers
+  const removeEmptyLayers = () => {
+    setTimelineLayers(prev => prev.filter(layer => layer.items.length > 0));
+  };
   
   const timelineRef = useRef<HTMLDivElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
@@ -742,20 +754,66 @@ export default function ProjectEditor() {
 
     // Calculate snap threshold based on timeline width
     const timelineWidth = timelineRef.current?.getBoundingClientRect().width || 1000;
-    const snapThreshold = (20 / timelineWidth) * totalDuration; // 20px threshold
+    const snapThreshold = (30 / timelineWidth) * totalDuration; // 30px threshold (reasonable)
+
+    // Check for snap to 0s mark
+    if (Math.abs(newStartTime - 0) < snapThreshold) {
+      return {
+        type: 'snap',
+        item: null,
+        snapTime: 0,
+        snapPosition: 'start'
+      };
+    }
+
+    // Check for snap to current playhead position
+    if (Math.abs(newStartTime - currentTime) < snapThreshold) {
+      return {
+        type: 'snap',
+        item: null,
+        snapTime: currentTime,
+        snapPosition: 'playhead'
+      };
+    }
+
+    // Check for buffer zone at end of timeline (last 200px)
+    const bufferZonePixels = 200;
+    const bufferZoneTime = (bufferZonePixels / timelineWidth) * totalDuration;
+    const timelineEnd = totalDuration;
+    const bufferZoneStart = timelineEnd - bufferZoneTime;
+    
+    if (newStartTime >= bufferZoneStart && newStartTime < timelineEnd) {
+      // In buffer zone - allow placement but don't force snap
+      return null; // Allow free placement in buffer zone
+    }
 
     for (const otherItem of otherItems) {
       const otherStart = otherItem.start_time;
       const otherEnd = otherItem.start_time + otherItem.duration;
 
-      // Check for overlap
+      // Check for overlap - if overlap detected, force snap instead
       if (newStartTime < otherEnd && newEndTime > otherStart) {
-        return {
-          type: 'overlap',
-          item: otherItem,
-          overlapStart: Math.max(newStartTime, otherStart),
-          overlapEnd: Math.min(newEndTime, otherEnd)
-        };
+        // Determine which snap position is closer
+        const snapToStart = Math.abs(newEndTime - otherStart);
+        const snapToEnd = Math.abs(newStartTime - otherEnd);
+        
+        if (snapToStart < snapToEnd) {
+          // Snap before the other item
+          return {
+            type: 'snap',
+            item: otherItem,
+            snapTime: otherStart - duration,
+            snapPosition: 'before'
+          };
+        } else {
+          // Snap after the other item
+          return {
+            type: 'snap',
+            item: otherItem,
+            snapTime: otherEnd,
+            snapPosition: 'after'
+          };
+        }
       }
 
       // Check for snap opportunities
@@ -793,35 +851,20 @@ export default function ProjectEditor() {
 
     const collision = checkCollision(itemId, layerId, newStartTime, item.duration);
     
-    if (collision) {
-      if (collision.type === 'snap') {
-        // Snap to adjacent item
-        setDragPreview({
-          x: 0,
-          y: 0,
-          time: collision.snapTime || 0,
-          layer: 0,
-          itemId,
-          layerId,
-          startTime: collision.snapTime || 0,
-          duration: item.duration
-        });
-      } else if (collision.type === 'overlap') {
-        // Prepare for swap - show preview but don't move yet
-        setDragPreview({
-          x: 0,
-          y: 0,
-          time: newStartTime,
-          layer: 0,
-          itemId,
-          layerId,
-          startTime: newStartTime,
-          duration: item.duration,
-          swapTarget: collision.item.id
-        });
-      }
+    if (collision && collision.type === 'snap') {
+      // Snap to adjacent item, 0s mark, or playhead
+      setDragPreview({
+        x: 0,
+        y: 0,
+        time: collision.snapTime || 0,
+        layer: 0,
+        itemId,
+        layerId,
+        startTime: collision.snapTime || 0,
+        duration: item.duration
+      });
     } else {
-      // No collision, normal drag
+      // No collision - normal drag
       setDragPreview({
         x: 0,
         y: 0,
@@ -842,39 +885,27 @@ export default function ProjectEditor() {
     
     if (!item) return;
 
-    const collision = checkCollision(itemId, layerId, finalStartTime, item.duration);
+    // Store the snap position before clearing dragPreview
+    const snapPosition = dragPreview?.startTime;
+    const finalPosition = snapPosition !== undefined ? snapPosition : finalStartTime;
     
-    if (collision && collision.type === 'overlap' && dragPreview?.swapTarget) {
-      // Perform swap
-      const targetItem = timelineLayers
-        .find(l => l.id === layerId)
-        ?.items.find(i => i.id === collision.item.id);
-      
-      if (targetItem) {
-        // Swap positions
-        setTimelineLayers(prev => prev.map(layer => ({
-          ...layer,
-          items: layer.items.map(i => {
-            if (i.id === itemId) {
-              return { ...i, start_time: targetItem.start_time };
-            } else if (i.id === collision.item.id) {
-              return { ...i, start_time: item.start_time };
-            }
-            return i;
-          })
-        })));
-      }
-    } else {
-      // Normal drop
+    // Clear drag preview first
+    setDragPreview(null);
+    
+    withHistory(() => {
+      // Normal drop - use final position (which may be snapped)
       setTimelineLayers(prev => prev.map(layer => ({
         ...layer,
         items: layer.items.map(i => 
-          i.id === itemId ? { ...i, start_time: finalStartTime } : i
+          i.id === itemId ? { ...i, start_time: finalPosition } : i
         )
       })));
-    }
-
-    setDragPreview(null);
+    });
+    
+    // Clean up empty layers after a short delay to allow state updates to complete
+    setTimeout(() => {
+      removeEmptyLayers();
+    }, 100);
   };
 
   // Move item from one layer to another
@@ -911,6 +942,11 @@ export default function ProjectEditor() {
     }));
 
     setDragPreview(null);
+    
+    // Clean up empty layers after a short delay to allow state updates to complete
+    setTimeout(() => {
+      removeEmptyLayers();
+    }, 100);
   };
 
   const ungroupGroup = (groupId: string) => {
@@ -1476,13 +1512,13 @@ export default function ProjectEditor() {
     } else {
       // In media layers
       const adjustedY = y - mainLayerHeight;
-      targetLayerIndex = Math.max(0, Math.floor(adjustedY / mediaLayerHeight));
+      targetLayerIndex = Math.floor(adjustedY / mediaLayerHeight);
     }
     
     const targetLayer = timelineLayers[targetLayerIndex];
     
     if (targetLayer && targetLayer.id !== isDraggingItem.layerId) {
-      // Moving to a different layer - update drag preview
+      // Moving to a different existing layer - update drag preview
       setDragPreview({
         x: 0,
         y: 0,
@@ -1493,6 +1529,28 @@ export default function ProjectEditor() {
         startTime: newStartTime,
         duration: 0
       });
+    } else if (!targetLayer) {
+      // Dragging to a position that would create a new layer (above/below existing layers)
+      // Calculate the maximum possible layer index based on current layers
+      const maxLayerIndex = timelineLayers.length - 1;
+      const isAboveTop = targetLayerIndex < 0;
+      const isBelowBottom = targetLayerIndex > maxLayerIndex;
+      
+      if (isAboveTop || isBelowBottom) {
+        // Create a placeholder layer ID for the drag preview
+        const placeholderLayerId = `placeholder_${targetLayerIndex}`;
+        setDragPreview({
+          x: 0,
+          y: 0,
+          time: newStartTime,
+          layer: targetLayerIndex,
+          itemId: isDraggingItem.itemId,
+          layerId: placeholderLayerId,
+          startTime: newStartTime,
+          duration: 0,
+          isPlaceholder: true
+        });
+      }
     } else {
       // Moving within the same layer - always call handleItemDrag for proper collision detection
       handleItemDrag(isDraggingItem.itemId, isDraggingItem.layerId, newStartTime);
@@ -1510,13 +1568,20 @@ export default function ProjectEditor() {
     const mediaLayerHeight = 124; // 44px header + 64px content + 16px mb-4
     let targetLayerIndex = 0;
     
-    if (y < mainLayerHeight) {
+    const tabHeight = 40; // Height of the main video tab
+    const aboveZoneStart = tabHeight; // Start after the tab
+    const aboveZoneEnd = tabHeight + 20; // 20px zone after tab for creating layer above first layer
+    
+    if (y >= aboveZoneStart && y < aboveZoneEnd) {
+      // Dragging in the "above" zone - create layer above all existing layers
+      targetLayerIndex = -1;
+    } else if (y < mainLayerHeight) {
       // In main component layer
       targetLayerIndex = 0;
     } else {
       // In media layers
       const adjustedY = y - mainLayerHeight;
-      targetLayerIndex = Math.max(0, Math.floor(adjustedY / mediaLayerHeight));
+      targetLayerIndex = Math.floor(adjustedY / mediaLayerHeight);
     }
     
     // Find the target layer
@@ -1524,8 +1589,37 @@ export default function ProjectEditor() {
     const finalStartTime = dragPreview?.startTime || isDraggingItem.startTime;
     
     if (targetLayer && targetLayer.id !== isDraggingItem.layerId) {
-      // Moving to a different layer
+      // Moving to a different existing layer
       moveItemToLayer(isDraggingItem.itemId, isDraggingItem.layerId, targetLayer.id, finalStartTime);
+    } else if (!targetLayer && dragPreview?.isPlaceholder) {
+      // Creating a new layer at placeholder position
+      withHistory(() => {
+        const newLayer = {
+          id: `layer_${Date.now()}`,
+          name: `Layer ${timelineLayers.length + 1}`,
+          visible: true,
+          items: []
+        };
+        
+        // Insert the new layer at the correct position
+        setTimelineLayers(prev => {
+          const newLayers = [...prev];
+          if (targetLayerIndex === -1) {
+            // Insert at the beginning (above all existing layers)
+            newLayers.unshift(newLayer);
+          } else {
+            // Insert at the calculated position
+            const insertIndex = Math.max(0, Math.min(targetLayerIndex, newLayers.length));
+            newLayers.splice(insertIndex, 0, newLayer);
+          }
+          return newLayers;
+        });
+        
+        // Move the item to the new layer
+        setTimeout(() => {
+          moveItemToLayer(isDraggingItem.itemId, isDraggingItem.layerId, newLayer.id, finalStartTime);
+        }, 0);
+      });
     } else {
       // Moving within the same layer (or no valid target layer)
       handleItemDrop(isDraggingItem.itemId, isDraggingItem.layerId, finalStartTime);
@@ -1554,8 +1648,23 @@ export default function ProjectEditor() {
         // Each media layer: 44px header + 64px content + 16px mb-4 = 124px total
         const mainLayerHeight = 80;
         const mediaLayerHeight = 124; // 44px header + 64px content + 16px mb-4
-        const adjustedY = y - mainLayerHeight;
-        const layer = Math.max(0, Math.floor(adjustedY / mediaLayerHeight));
+        
+        let layer;
+        const tabHeight = 40; // Height of the main video tab
+        const aboveZoneStart = tabHeight; // Start after the tab
+        const aboveZoneEnd = tabHeight + 20; // 20px zone after tab for creating layer above first layer
+        
+        if (y >= aboveZoneStart && y < aboveZoneEnd) {
+          // Dragging in the "above" zone - create layer above all existing layers
+          layer = -1;
+        } else if (y < mainLayerHeight) {
+          // In main component layer
+          layer = 0;
+        } else {
+          // In media layers
+          const adjustedY = y - mainLayerHeight;
+          layer = Math.floor(adjustedY / mediaLayerHeight);
+        }
       
       let finalTime = time;
       let snapTarget = null;
@@ -1582,7 +1691,32 @@ export default function ProjectEditor() {
         finalTime = time;
       }
       
-      setDragPreview({ x, y, time: finalTime, layer, snapTarget: snapTarget || undefined });
+      // Check if we're dragging to a position that would create a new layer
+      const maxLayerIndex = timelineLayers.length - 1;
+      const isAboveTop = layer === -1;
+      const isBelowBottom = layer > maxLayerIndex;
+      const isPlaceholderPosition = isAboveTop || isBelowBottom;
+      
+      // For new items, check for collisions with existing items
+      if (draggedMediaItem && !isPlaceholderPosition && layer >= 0 && layer < timelineLayers.length) {
+        const targetLayer = timelineLayers[layer];
+        if (targetLayer) {
+          const itemDuration = draggedMediaItem.duration || 5;
+          const collision = checkCollision('new-item', targetLayer.id, finalTime, itemDuration);
+          if (collision && collision.type === 'snap') {
+            finalTime = collision.snapTime || finalTime;
+          }
+        }
+      }
+      
+      setDragPreview({ 
+        x, 
+        y, 
+        time: finalTime, 
+        layer, 
+        snapTarget: snapTarget || undefined,
+        isPlaceholder: isPlaceholderPosition
+      });
       
       // Set drag outline for media items
       if (draggedMediaItem) {
@@ -1614,7 +1748,8 @@ export default function ProjectEditor() {
           layer, 
           width: itemWidth,
           item: draggedMediaItem,
-          targetTop
+          targetTop,
+          isPlaceholder: isPlaceholderPosition
         });
       } else {
         setDragOutline(null);
@@ -1714,7 +1849,17 @@ export default function ProjectEditor() {
       
       if (direction === 'end') {
         // Extending the end
-        newDuration = Math.max(1, startDuration + deltaTime); // Minimum 1 second
+        if (isOptionHeld && isMediaItem(item) && item.asset?.type === 'video') {
+          // With Option held, allow extending beyond video length for freeze frame
+          newDuration = Math.max(1, startDuration + deltaTime);
+        } else if (isMediaItem(item) && item.asset?.type === 'video') {
+          // Without Option, limit to original video length
+          const maxDuration = item.asset.duration || startDuration;
+          newDuration = Math.max(1, Math.min(maxDuration, startDuration + deltaTime));
+      } else {
+          // For images, allow unlimited extension
+        newDuration = Math.max(1, startDuration + deltaTime);
+        }
       } else {
         // Resizing the start handle
         // Dragging right moves start time later (reduces duration)
@@ -1738,8 +1883,8 @@ export default function ProjectEditor() {
                   if (direction === 'end') {
                     // Extending end with freeze-frame - freeze at the last visible frame
                     // For split videos, freeze at the split point (videoEndTime)
-                    // For unsplit videos, freeze at the original duration
-                    const freezeFrameTime = (mediaItem as any).videoEndTime || mediaItem.duration;
+                    // For unsplit videos, freeze at the original video end
+                    const freezeFrameTime = (mediaItem as any).videoEndTime || mediaItem.asset.duration;
                     return {
                       ...updatedItem,
                       freezeFrame: true,
@@ -1853,14 +1998,44 @@ export default function ProjectEditor() {
 
     if (draggedComponent) {
       console.log('Dropping component:', draggedComponent);
-      const layerHeight = 80;
-      const targetLayerIndex = Math.floor(y / layerHeight);
+      
+      // Calculate target layer using correct layer heights (same as drag preview)
+      const mainLayerHeight = 80; // Height of main component layer
+      const mediaLayerHeight = 124; // 44px header + 64px content + 16px mb-4
+      let targetLayerIndex = 0;
+      
+      const tabHeight = 40; // Height of the main video tab
+      const aboveZoneStart = tabHeight; // Start after the tab
+      const aboveZoneEnd = tabHeight + 20; // 20px zone after tab for creating layer above first layer
+      
+      if (y >= aboveZoneStart && y < aboveZoneEnd) {
+        // Dragging in the "above" zone - create layer above all existing layers
+        targetLayerIndex = -1;
+      } else if (y < mainLayerHeight) {
+        // In main component layer
+        targetLayerIndex = 0;
+      } else {
+        // In media layers
+        const adjustedY = y - mainLayerHeight;
+        targetLayerIndex = Math.floor(adjustedY / mediaLayerHeight);
+      }
+      
+      // Check for collisions if dropping into an existing layer
+      let finalStartTime = startTime;
+      if (targetLayerIndex >= 0 && targetLayerIndex < timelineLayers.length) {
+        const targetLayer = timelineLayers[targetLayerIndex];
+        const itemDuration = totalDuration || 10;
+        const collision = checkCollision('new-component', targetLayer.id, startTime, itemDuration);
+        if (collision && collision.type === 'snap') {
+          finalStartTime = collision.snapTime || startTime;
+        }
+      }
       
       const newItem: TimelineItem = {
         id: `timeline_${Date.now()}`,
         component_id: draggedComponent.id,
           component: draggedComponent,
-        start_time: startTime,
+        start_time: finalStartTime,
           duration: totalDuration || 10, // Use total video duration instead of component duration
         order: 0 // Will be set by the layer system
         };
@@ -1878,23 +2053,35 @@ export default function ProjectEditor() {
       setTimelineLayers(prev => {
         const newLayers = [...prev];
         
-        // Find or create the target layer
-        if (targetLayerIndex >= 0 && targetLayerIndex < newLayers.length) {
+        // Check if we need to create a new layer or add to existing
+        const maxLayerIndex = newLayers.length - 1;
+        const isAboveTop = targetLayerIndex < 0;
+        const isBelowBottom = targetLayerIndex > maxLayerIndex;
+        
+        if (isAboveTop || isBelowBottom) {
+          // Create new layer at the correct position
+          const newLayerId = `layer_${Date.now()}`;
+          const newLayer = {
+            id: newLayerId,
+            name: `Layer ${newLayers.length + 1}`,
+            visible: true,
+            items: [newItem]
+          };
+          
+          if (isAboveTop) {
+            // Insert at the beginning (index 0)
+            newLayers.unshift(newLayer);
+          } else {
+            // Insert at the end
+            newLayers.push(newLayer);
+          }
+        } else if (targetLayerIndex >= 0 && targetLayerIndex < newLayers.length) {
           // Add to existing layer
           const targetLayer = newLayers[targetLayerIndex];
           newLayers[targetLayerIndex] = {
             ...targetLayer,
             items: [...targetLayer.items, newItem]
           };
-        } else {
-          // Create new layer
-          const newLayerId = `layer_${Date.now()}`;
-          newLayers.push({
-            id: newLayerId,
-            name: `Layer ${newLayers.length + 1}`,
-            visible: true,
-            items: [newItem]
-          });
         }
         
         return newLayers;
@@ -1910,10 +2097,25 @@ export default function ProjectEditor() {
       // Check if dropping on an existing layer or creating a new one
       const mainLayerHeight = 80; // Height of main component layer
       const mediaLayerHeight = 124; // 44px header + 64px content + 16px mb-4
-      const adjustedY = y - mainLayerHeight;
-      const layerIndex = Math.max(0, Math.floor(adjustedY / mediaLayerHeight));
       
-      if (layerIndex < timelineLayers.length) {
+      const tabHeight = 40; // Height of the main video tab
+      const aboveZoneStart = tabHeight; // Start after the tab
+      const aboveZoneEnd = tabHeight + 20; // 20px zone after tab for creating layer above first layer
+      
+      let layerIndex;
+      if (y >= aboveZoneStart && y < aboveZoneEnd) {
+        // Dragging in the "above" zone - create layer above all existing layers
+        layerIndex = -1;
+      } else if (y < mainLayerHeight) {
+        // In main component layer
+        layerIndex = 0;
+      } else {
+        // In media layers
+        const adjustedY = y - mainLayerHeight;
+        layerIndex = Math.floor(adjustedY / mediaLayerHeight);
+      }
+      
+      if (layerIndex >= 0 && layerIndex < timelineLayers.length) {
         // Add to existing layer
         const targetLayer = timelineLayers[layerIndex];
         const duration = draggedMediaAsset.duration || 5;
@@ -1965,7 +2167,13 @@ export default function ProjectEditor() {
           items: [newMediaItem]
         };
         
+        if (layerIndex === -1) {
+          // Insert at the beginning (above all existing layers)
+          setTimelineLayers(prev => [newLayer, ...prev]);
+        } else {
+          // Insert at the end (below all existing layers)
         setTimelineLayers(prev => [...prev, newLayer]);
+        }
         
         // Set default properties for the media item
         setMediaProperties(prev => ({
@@ -2042,6 +2250,7 @@ export default function ProjectEditor() {
       // Use the snapped time from drag preview if available
       let finalStartTime = newStartTime;
       if (dragPreview) {
+        // When snapping, use the exact snap position without click offset
         finalStartTime = dragPreview.time;
       } else {
         // Ensure the item doesn't go negative or extend beyond total duration
@@ -2049,12 +2258,12 @@ export default function ProjectEditor() {
         
         // Apply snap to grid if enabled
         finalStartTime = snapToGrid ? Math.round(clampedStartTime * 4) / 4 : clampedStartTime;
-      }
       
-      // Account for click offset to maintain the clip's start position
+        // Account for click offset to maintain the clip's start position (only when not snapping)
       const clickOffset = draggedMediaItem.clickOffset || 0;
       const offsetTime = (clickOffset / timelineWidth) * totalDuration;
       finalStartTime = Math.max(0, finalStartTime - offsetTime);
+      }
       
       setTimelineLayers(prev => {
         const newLayers = [...prev];
@@ -3077,16 +3286,6 @@ export default function ProjectEditor() {
                               freezeFrame={(mediaItem as any).freezeFrame || false}
                               freezeFrameTime={(mediaItem as any).freezeFrameTime || 0}
                             />
-                            {/* Extension marker - show when video is extended beyond original duration */}
-                            {isMediaItem(mediaItem) && mediaItem.asset.duration && mediaItem.duration > mediaItem.asset.duration && (
-                              <div 
-                                className="absolute top-0 bottom-0 w-0.5 bg-yellow-400 opacity-80"
-                                style={{
-                                  left: `${isMediaItem(mediaItem) ? (mediaItem.asset.duration / mediaItem.duration) * 100 : 0}%`
-                                }}
-                                title="End of original video - extension begins here"
-                              />
-                            )}
                           </div>
                         ) : isMediaItem(mediaItem) ? (
                           <img
@@ -3257,6 +3456,32 @@ export default function ProjectEditor() {
                     <span className="text-xs text-blue-700 font-medium">
                       {dragOutline.item.asset?.name || 'Media Item'}
                     </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Placeholder Layer Preview */}
+              {(dragPreview?.isPlaceholder || dragOutline?.isPlaceholder) && (
+                <div
+                  className="absolute pointer-events-none z-20"
+                  style={{
+                    left: '0%',
+                    top: (dragPreview?.layer === -1 || dragOutline?.layer === -1) 
+                      ? '60px' // Above zone - show between tab and first layer
+                      : `${80 + 44 + ((dragPreview?.layer || dragOutline?.layer || 0) * 124)}px`, // Normal positioning
+                    width: '100%',
+                    height: '64px' // Just the content area height
+                  }}
+                >
+                  <div className="w-full h-full border-2 border-dashed border-green-500 bg-green-100 bg-opacity-20 rounded-lg flex items-center justify-center">
+                    <div className="text-center">
+                      <div className="text-sm text-green-700 font-medium">New Layer</div>
+                      <div className="text-xs text-green-600">
+                        {(dragPreview?.layer === -1 || dragOutline?.layer === -1) 
+                          ? 'Drop here to create above' 
+                          : 'Drop here to create'}
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}
@@ -3583,20 +3808,10 @@ export default function ProjectEditor() {
                             </>
                           )}
                         
-                        {/* Video end marker - show where original video ends if extended */}
-                        {!isGroup && isMediaItem(item) && item.asset.type === 'video' && item.asset.duration && item.duration > item.asset.duration && (
-                          <div 
-                            className="absolute top-0 bottom-0 w-0.5 bg-yellow-400 border-l border-yellow-500"
-                            style={{
-                              left: `${isMediaItem(item) ? (item.asset.duration / item.duration) * 100 : 0}%`
-                            }}
-                            title={`Original video ends at ${formatTime(item.start_time + (isMediaItem(item) ? item.asset.duration : 0))}`}
-                          />
-                        )}
                         
                         {/* Freeze frame indicator - show where freeze frame starts */}
                         {!isGroup && isMediaItem(item) && item.asset.type === 'video' && (item as any).freezeFrame && (
-                          <div
+                          <div 
                             className="absolute top-0 bottom-0 w-0.5 bg-purple-400 border-l border-purple-500"
                             style={{
                               left: `${((item as any).freezeFrameTime / item.duration) * 100}%`
@@ -3785,22 +4000,11 @@ export default function ProjectEditor() {
                 .filter(Boolean)}
               </div> {/* End of Timeline Content with Zoom Scaling */}
 
-              {/* Add New Layer Button */}
-              <div className="mt-4">
-                <button
-                  onClick={() => {
-                    const newLayer = {
-                      id: `layer_${Date.now()}`,
-                      name: `Layer ${timelineLayers.length + 1}`,
-                      visible: true,
-                      items: []
-                    };
-                    setTimelineLayers(prev => [...prev, newLayer]);
-                  }}
-                  className="px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 text-sm"
-                >
-                  + Add New Layer
-                </button>
+              {/* Smart Layer Creation Info */}
+              <div className="mt-4 text-center">
+                <div className="text-xs text-gray-500">
+                  💡 Drag items above or below existing layers to create new layers automatically
+                </div>
               </div>
             </div>
           </div>
