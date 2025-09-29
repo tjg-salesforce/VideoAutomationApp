@@ -43,9 +43,9 @@ function VideoTimelineControl({
     const video = videoRef.current;
     if (!video || video.readyState < 2) return;
 
-    const videoEndTime = startTime + duration;
+    const timelineEndTime = startTime + duration;
     
-    if (currentTime >= startTime && currentTime <= videoEndTime) {
+    if (currentTime >= startTime && currentTime <= timelineEndTime) {
       if (freezeFrame) {
         // Freeze frame behavior - only freeze the extended portion
         // Check if we're in the extended area (beyond the original content)
@@ -896,9 +896,22 @@ export default function ProjectEditor() {
       // Normal drop - use final position (which may be snapped)
       setTimelineLayers(prev => prev.map(layer => ({
         ...layer,
-        items: layer.items.map(i => 
-          i.id === itemId ? { ...i, start_time: finalPosition } : i
-        )
+        items: layer.items.map(i => {
+          if (i.id === itemId) {
+            const updatedItem = { ...i, start_time: finalPosition };
+            // Preserve video cropping properties for split clips
+            if (isMediaItem(i) && i.asset?.type === 'video' && 
+                ((i as any).videoStartTime !== undefined || (i as any).videoEndTime !== undefined)) {
+              return {
+                ...updatedItem,
+                videoStartTime: (i as any).videoStartTime,
+                videoEndTime: (i as any).videoEndTime
+              };
+            }
+            return updatedItem;
+          }
+          return i;
+        })
       })));
     });
     
@@ -931,7 +944,13 @@ export default function ProjectEditor() {
         const newItem = { 
           ...item, 
           start_time: collision?.snapTime || finalStartTime,
-          layerId: toLayerId 
+          layerId: toLayerId,
+          // Preserve video cropping properties for split clips
+          ...(isMediaItem(item) && item.asset?.type === 'video' && 
+              ((item as any).videoStartTime !== undefined || (item as any).videoEndTime !== undefined) ? {
+            videoStartTime: (item as any).videoStartTime,
+            videoEndTime: (item as any).videoEndTime
+          } : {})
         };
         return {
           ...layer,
@@ -1888,7 +1907,12 @@ export default function ProjectEditor() {
                     return {
                       ...updatedItem,
                       freezeFrame: true,
-                      freezeFrameTime: freezeFrameTime
+                      freezeFrameTime: freezeFrameTime,
+                      // Preserve video cropping properties for split clips
+                      ...(((mediaItem as any).videoStartTime !== undefined || (mediaItem as any).videoEndTime !== undefined) ? {
+                        videoStartTime: (mediaItem as any).videoStartTime,
+                        videoEndTime: (mediaItem as any).videoEndTime
+                      } : {})
                     };
                   } else {
                     // Extending start with freeze-frame - freeze at the first visible frame
@@ -1898,13 +1922,56 @@ export default function ProjectEditor() {
                     return {
                       ...updatedItem,
                       freezeFrame: true,
-                      freezeFrameTime: freezeFrameTime
+                      freezeFrameTime: freezeFrameTime,
+                      // Preserve video cropping properties for split clips
+                      ...(((mediaItem as any).videoStartTime !== undefined || (mediaItem as any).videoEndTime !== undefined) ? {
+                        videoStartTime: (mediaItem as any).videoStartTime,
+                        videoEndTime: (mediaItem as any).videoEndTime
+                      } : {})
                     };
                   }
                 }
                 
-                // Normal resize behavior
-                return { ...mediaItem, start_time: newStartTime, duration: newDuration };
+                // Normal resize behavior - preserve video cropping properties for split clips
+                const updatedItem = { ...mediaItem, start_time: newStartTime, duration: newDuration };
+                
+                // For split video clips, adjust the video cropping to match the new timeline duration
+                if (isMediaItem(mediaItem) && mediaItem.asset?.type === 'video' && 
+                    ((mediaItem as any).videoStartTime !== undefined || (mediaItem as any).videoEndTime !== undefined)) {
+                  
+                  const originalVideoStartTime = (mediaItem as any).videoStartTime || 0;
+                  const originalVideoEndTime = (mediaItem as any).videoEndTime || mediaItem.asset.duration;
+                  const originalDuration = mediaItem.duration;
+                  const originalVideoDuration = originalVideoEndTime - originalVideoStartTime;
+                  
+                  if (direction === 'end') {
+                    // Resizing the end - crop the video content to match the new duration
+                    // The new video duration should be the new timeline duration, but bounded by available content
+                    const maxVideoDuration = originalVideoEndTime - originalVideoStartTime;
+                    const newVideoDuration = Math.min(newDuration, maxVideoDuration);
+                    const newVideoEndTime = originalVideoStartTime + newVideoDuration;
+                    
+                    return {
+                      ...updatedItem,
+                      videoStartTime: originalVideoStartTime,
+                      videoEndTime: newVideoEndTime
+                    };
+                  } else {
+                    // Resizing the start - crop the video content to match the new duration
+                    // The new video duration should be the new timeline duration, but bounded by available content
+                    const maxVideoDuration = originalVideoEndTime - originalVideoStartTime;
+                    const newVideoDuration = Math.min(newDuration, maxVideoDuration);
+                    const newVideoStartTime = originalVideoEndTime - newVideoDuration;
+                    
+                    return {
+                      ...updatedItem,
+                      videoStartTime: newVideoStartTime,
+                      videoEndTime: originalVideoEndTime
+                    };
+                  }
+                }
+                
+                return updatedItem;
               })
             }
           : layer
