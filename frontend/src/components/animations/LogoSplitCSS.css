@@ -118,7 +118,7 @@
 @keyframes salesforceLogoSlideGrowIn {
   0% {
     left: 100vw;
-    transform: translate(-50%, -50%) scale(0);
+    transform: translate(calc(-50% + 180%), -50%) scale(0);
   }
   100% {
     left: var(--salesforce-logo-left);
@@ -180,7 +180,7 @@
 
 .logo-split-canvas[data-frame="0"] .salesforce-logo-circle {
   left: 100vw;
-  transform: translate(-50%, -50%) scale(0);
+  transform: translate(calc(-50% + 180%), -50%) scale(0);
 }
 
 .logo-split-canvas[data-frame="30"] .salesforce-logo-circle {
