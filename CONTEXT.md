@@ -162,20 +162,46 @@ components (id, name, type, category, file_path, duration, created_at, updated_a
 - **Message Management**: Add/edit/delete messages with proper validation
 - **Timeline Integration**: Ready for sub-clip animation system
 
-## 🔧 TIMELINE TAB SYSTEM (IN PROGRESS)
+## 🔧 TEMPLATE SYSTEM (CURRENT ISSUE)
 
-### Foundation Implemented
-- **TimelineTab Interface**: Support for main timeline and group sub-timelines
-- **TimelineGroup Interface**: Group management with collapsed/expanded states
-- **TimelineTabBar Component**: Tab bar with rename, close, and navigation
-- **useTimelineTabs Hook**: State management for tabs and groups
-- **Project Integration**: Updated Project interface to support tabbed timeline
+### Problem Identified
+**Template creation works, but "Use Template" creates empty projects**
 
-### Planned Features
-- **Group Creation**: Select multiple items and group them together
-- **Group Navigation**: Double-click groups to open in new timeline tab
-- **SMS Sub-clips**: Auto-generate message animation sub-clips
-- **Tab Management**: Rename tabs, close group tabs, switch between timelines
+**Root Cause**: Database schema issue - the `settings` column is missing from the `templates` table in the remote AWS RDS database.
+
+**Current Architecture**:
+- **Frontend/Backend**: Running locally on localhost:3000/3001
+- **Database**: Remote AWS RDS PostgreSQL (not local)
+- **Template Data**: Complex layer-based system stored in `settings` field:
+  - `timelineLayers` - Layer structure with items
+  - `componentProperties` - Component-specific properties
+  - `mediaAssets` - Media file data
+  - `timelineTabs` - Tab organization
+  - `mediaProperties` - Media-specific properties
+
+**The Issue**: 
+- Template creation saves basic data (name, description, timeline) but NOT the `settings` field
+- The `settings` field contains all the complex layer data needed for templates
+- Database migration to add `settings` column is failing silently
+- Without `settings`, templates can't store the layer structure, component properties, and media data
+
+**Attempted Solutions**:
+1. ✅ Added migration endpoint to add `settings` column
+2. ✅ Updated Template model to handle `settings` field
+3. ✅ Added `SaveTemplateModal` for better UX
+4. ❌ Database migration not working - `settings` column still missing
+5. ❌ Workarounds (storing in `timeline`, `assets`, `merge_fields`) not working
+
+**Next Steps**:
+1. **Fix Database Schema**: Get the `settings` column added to the remote database
+2. **Test Template Usage**: Verify templates copy all layer data to new projects
+3. **Deploy to Heroku**: Get the full webapp running for demos
+
+### Template System Architecture
+- **Template Creation**: Save project with all layer data in `settings` field
+- **Template Usage**: Copy `settings` data to new project
+- **Data Structure**: Complex layer-based system with component properties
+- **Database**: Needs `settings JSONB` column in `templates` table
 
 ## File Structure
 ```
@@ -493,14 +519,16 @@ curl https://video-automation-backend-7178f3c7577d.herokuapp.com/api/templates
 ```
 
 ## Next Steps for New Session
-1. **Immediate**: Integrate timeline tab bar into main timeline UI
-2. **Then**: Implement grouping functionality (select items, create groups)
-3. **Then**: Add SMS sub-clip animation system (message appear, typing, dictation)
-4. **Then**: Implement video export functionality with CSS animations
-5. **Then**: Add more component types and animations
-6. **Then**: Implement SQS job queue for video rendering
-7. **Then**: Create basic FFmpeg rendering service
-8. **Then**: Add collaborative features (real-time editing, comments)
+1. **IMMEDIATE**: Fix database schema - add `settings` column to `templates` table
+2. **Then**: Test template creation and usage with full layer data
+3. **Then**: Deploy to Heroku for demos and sharing
+4. **Then**: Implement grouping functionality (select items, create groups)
+5. **Then**: Add SMS sub-clip animation system (message appear, typing, dictation)
+6. **Then**: Implement video export functionality with CSS animations
+7. **Then**: Add more component types and animations
+8. **Then**: Implement SQS job queue for video rendering
+9. **Then**: Create basic FFmpeg rendering service
+10. **Then**: Add collaborative features (real-time editing, comments)
 
 ## Important Notes
 - Backend is fully functional and deployed

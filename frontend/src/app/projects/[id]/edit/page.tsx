@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useRouter, useSearchParams, usePathname } from 'next/navigation';
-import { PlayIcon, PauseIcon, TrashIcon, ArrowLeftIcon, ArrowDownTrayIcon, ScissorsIcon, ArrowsPointingOutIcon, ShareIcon, ChevronDownIcon } from '@heroicons/react/24/outline';
+import { PlayIcon, PauseIcon, TrashIcon, ArrowLeftIcon, ScissorsIcon, ArrowsPointingOutIcon, ShareIcon, ChevronDownIcon, CogIcon } from '@heroicons/react/24/outline';
 import { Project, Component, TimelineItem } from '@/types';
 import { apiEndpoints } from '@/lib/api';
 import ComponentRenderer from '@/components/ComponentRenderer';
@@ -11,6 +11,8 @@ import ComponentPropertiesPanel from '@/components/ComponentPropertiesPanel';
 import TimelineTabBar from '@/components/TimelineTabBar';
 import { useTimelineTabs } from '@/hooks/useTimelineTabs';
 import PreviewModal from '@/components/PreviewModal';
+import SaveTemplateModal from '@/components/SaveTemplateModal';
+import ProjectSettingsModal from '@/components/ProjectSettingsModal';
 import Toast from '@/components/Toast';
 import lottie from 'lottie-web';
 
@@ -132,6 +134,7 @@ export default function ProjectEditor() {
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const projectId = params.id as string;
+  const isTemplate = searchParams.get('template') === 'true';
   
   const [project, setProject] = useState<Project | null>(null);
   const [components, setComponents] = useState<Component[]>([]);
@@ -168,7 +171,6 @@ export default function ProjectEditor() {
   const [timelineZoom, setTimelineZoom] = useState(1); // 1 = normal, 2 = 2x zoom, 0.5 = half zoom
   const [showComponentLibrary, setShowComponentLibrary] = useState(true);
   const [showMediaLibrary, setShowMediaLibrary] = useState(false);
-  const [isRendering, setIsRendering] = useState(false);
   const [mediaAssets, setMediaAssets] = useState<any[]>([]);
 
   // Timeline tab system
@@ -230,11 +232,10 @@ export default function ProjectEditor() {
     startX: number;
     startTime: number;
   } | null>(null);
-  const [videoFormat, setVideoFormat] = useState<'mp4' | 'webm' | 'mov'>('mp4');
-  const [hasAlphaChannel, setHasAlphaChannel] = useState(false);
-  const [showDownloadModal, setShowDownloadModal] = useState(false);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
+  const [showSaveTemplateModal, setShowSaveTemplateModal] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [lottieData, setLottieData] = useState<any>(null);
   const [showSaveDropdown, setShowSaveDropdown] = useState(false);
@@ -1189,35 +1190,7 @@ export default function ProjectEditor() {
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [selectedItems, timelineTabs]);
 
-  // Migration function to move components from timeline array to timelineLayers
-  const migrateComponentsToTimelineLayers = () => {
-    if (timeline.length === 0) return;
-
-    // Create a components layer if it doesn't exist
-    const componentsLayer = timelineLayers.find(layer => layer.id === 'components-layer');
-    
-    if (!componentsLayer) {
-      // Create new components layer
-      const newComponentsLayer = {
-        id: 'components-layer',
-        name: 'Components',
-        visible: true,
-        items: timeline as TimelineItem[]
-      };
-      
-      setTimelineLayers(prev => [newComponentsLayer, ...prev]);
-    } else {
-      // Add components to existing layer
-      setTimelineLayers(prev => prev.map(layer => 
-        layer.id === 'components-layer' 
-          ? { ...layer, items: [...timeline, ...layer.items] }
-          : layer
-      ));
-    }
-    
-    // Clear the old timeline array
-    setTimeline([]);
-  };
+  // Migration function removed - we now use unified layering system
 
   useEffect(() => {
     loadProject();
@@ -1268,12 +1241,7 @@ export default function ProjectEditor() {
     setCurrentTime(time);
   };
 
-  // Migration effect - move components to timelineLayers when they're loaded
-  useEffect(() => {
-    if (timeline.length > 0) {
-      migrateComponentsToTimelineLayers();
-    }
-  }, [timeline]);
+  // Migration effect removed - we now use unified layering system
 
   const loadLottieData = async () => {
     try {
@@ -1337,9 +1305,11 @@ export default function ProjectEditor() {
     const startTime = Date.now();
     for (let attempt = 1; attempt <= retries; attempt++) {
       try {
-        console.log(`Loading project ${projectId} (attempt ${attempt}/${retries})...`);
+        console.log(`Loading ${isTemplate ? 'template' : 'project'} ${projectId} (attempt ${attempt}/${retries})...`);
         const apiStartTime = Date.now();
-        const response = await apiEndpoints.getProject(projectId);
+        const response = isTemplate 
+          ? await apiEndpoints.getTemplate(projectId)
+          : await apiEndpoints.getProject(projectId);
         const apiTime = Date.now() - apiStartTime;
         console.log(`API call completed in ${apiTime}ms`);
         
@@ -1403,6 +1373,12 @@ export default function ProjectEditor() {
           if (projectData.settings.mediaProperties) {
             setMediaProperties(projectData.settings.mediaProperties);
           }
+          
+          // Set duration from settings if it exists (for templates)
+          if (projectData.settings.duration && projectData.settings.duration > 0) {
+            console.log(`Setting duration from project settings: ${projectData.settings.duration}s`);
+            setTotalDuration(projectData.settings.duration);
+          }
         }
         const totalTime = Date.now() - startTime;
         console.log(`Project ${projectId} loaded successfully in ${totalTime}ms`);
@@ -1462,6 +1438,14 @@ export default function ProjectEditor() {
   };
 
   const calculateTotalDuration = (timelineItems: TimelineItem[]) => {
+    // First check if we have a duration from project settings (for templates)
+    const projectSettings = (project as any)?.settings;
+    if (projectSettings?.duration && projectSettings.duration > 0) {
+      console.log(`Using duration from project settings: ${projectSettings.duration}s`);
+      setTotalDuration(projectSettings.duration);
+      return;
+    }
+    
     const componentMaxTime = Math.max(...timelineItems.map(item => item.start_time + item.duration), 0);
     const mediaMaxTime = Math.max(...timelineLayers.flatMap(layer => 
       layer.items.map(item => item.start_time + item.duration)
@@ -2514,22 +2498,109 @@ export default function ProjectEditor() {
         status: 'in_progress'
       };
       
-      console.log('Saving project with data:', projectData);
-      await apiEndpoints.updateProject(project.id, projectData);
+      console.log(`Saving ${isTemplate ? 'template' : 'project'} with data:`, projectData);
+      
+      if (isTemplate) {
+        // Remove fields that don't exist in templates table
+        const { 
+          status, 
+          template_id, 
+          owner_id, 
+          locked_by, 
+          render_settings, 
+          output_url, 
+          last_rendered_at,
+          ...templateData 
+        } = projectData;
+        await apiEndpoints.updateTemplate(project.id, templateData);
+      } else {
+        await apiEndpoints.updateProject(project.id, projectData);
+      }
       
       // Refresh project data
       await loadProject();
       
-      setToast({ message: 'Project saved successfully!', type: 'success' });
+      setToast({ message: `${isTemplate ? 'Template' : 'Project'} saved successfully!`, type: 'success' });
     } catch (error) {
       console.error('Error saving project:', error);
-      setToast({ message: 'Failed to save project. Please try again.', type: 'error' });
+      setToast({ message: `Failed to save ${isTemplate ? 'template' : 'project'}. Please try again.`, type: 'error' });
     } finally {
       setLoading(false);
     }
   };
 
-  const saveAsTemplate = async () => {
+  const handleDeleteProject = async () => {
+    if (!project) return;
+
+    const itemType = isTemplate ? 'template' : 'project';
+    const confirmMessage = `Are you sure you want to delete this ${itemType} "${project.name}"? This action cannot be undone.`;
+    if (window.confirm(confirmMessage)) {
+      setLoading(true);
+      try {
+        if (isTemplate) {
+          await apiEndpoints.deleteTemplate(project.id);
+        } else {
+          await apiEndpoints.deleteProject(project.id);
+        }
+        setToast({ message: `${itemType.charAt(0).toUpperCase() + itemType.slice(1)} deleted successfully!`, type: 'success' });
+        // Navigate back to home page after successful deletion
+        router.push('/');
+      } catch (error) {
+        console.error(`Error deleting ${itemType}:`, error);
+        setToast({ message: `Failed to delete ${itemType}. Please try again.`, type: 'error' });
+      } finally {
+        setLoading(false);
+      }
+    }
+  };
+
+  const handleSaveSettings = async (settings: { name: string; description: string; duration: number }) => {
+    if (!project) return;
+
+    setLoading(true);
+    try {
+      // Only send the fields that need to be updated
+      const updateData = {
+        name: settings.name,
+        description: settings.description,
+        settings: {
+          ...project.settings,
+          duration: settings.duration
+        }
+      };
+
+      console.log('Sending update data:', updateData);
+
+      // Update the project/template in the database
+      if (isTemplate) {
+        await apiEndpoints.updateTemplate(project.id, updateData);
+      } else {
+        await apiEndpoints.updateProject(project.id, updateData);
+      }
+      
+      // Update local state
+      const updatedProject = {
+        ...project,
+        name: settings.name,
+        description: settings.description,
+        settings: {
+          ...project.settings,
+          duration: settings.duration
+        }
+      };
+      setProject(updatedProject);
+      setTotalDuration(settings.duration);
+      
+      setToast({ message: 'Project settings saved successfully!', type: 'success' });
+    } catch (error) {
+      console.error('Error saving project settings:', error);
+      setToast({ message: 'Failed to save project settings. Please try again.', type: 'error' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const saveAsTemplate = async (templateData: { name: string; description: string }) => {
     if (!project) return;
 
     setLoading(true);
@@ -2551,9 +2622,9 @@ export default function ProjectEditor() {
         }))
       }));
 
-      const templateData = {
-        name: `${project.name} Template`,
-        description: `Template based on project: ${project.description || project.name}`,
+      const fullTemplateData = {
+        name: templateData.name,
+        description: templateData.description,
         timeline: timelineWithProperties,
         settings: {
           mediaAssets,
@@ -2566,8 +2637,8 @@ export default function ProjectEditor() {
         isActive: true
       };
       
-      console.log('Saving template with data:', templateData);
-      await apiEndpoints.createTemplate(templateData);
+      console.log('Saving template with data:', fullTemplateData);
+      await apiEndpoints.createTemplate(fullTemplateData);
       
       setToast({ message: 'Template saved successfully!', type: 'success' });
     } catch (error) {
@@ -2815,192 +2886,6 @@ export default function ProjectEditor() {
     return { lottieInstance, container };
   };
 
-  const downloadVideo = async () => {
-    if (timeline.length === 0) {
-      alert('No components in timeline to render');
-      return;
-    }
-
-    setIsRendering(true);
-    try {
-      console.log('Starting video rendering...');
-      
-      // Create a high-resolution canvas for rendering
-      // Canvas maintains 16:9 aspect ratio (1920x1080) to match preview
-      // This ensures video exports match the preview aspect ratio and cropping behavior
-      const canvas = document.createElement('canvas');
-      canvas.width = 1920;
-      canvas.height = 1080;
-      const ctx = canvas.getContext('2d');
-      
-      if (!ctx) {
-        throw new Error('Could not get canvas context');
-      }
-
-      // Enable high-quality rendering
-      ctx.imageSmoothingEnabled = true;
-      ctx.imageSmoothingQuality = 'high';
-
-      // Set up MediaRecorder for video capture
-      const stream = canvas.captureStream(60); // 60fps for smoother video
-      
-      // Determine MIME type based on user selection and browser support
-      let mimeType = 'video/webm;codecs=vp8';
-      let fileExtension = 'webm';
-      
-      if (videoFormat === 'mp4') {
-        if (MediaRecorder.isTypeSupported('video/mp4;codecs=h264')) {
-          mimeType = 'video/mp4;codecs=h264';
-          fileExtension = 'mp4';
-          console.log('Using MP4 H.264 format');
-        } else if (MediaRecorder.isTypeSupported('video/mp4')) {
-          mimeType = 'video/mp4';
-          fileExtension = 'mp4';
-          console.log('Using MP4 format (no codec specified)');
-        } else {
-          console.log('MP4 not supported, falling back to WebM');
-          mimeType = 'video/webm;codecs=vp8';
-          fileExtension = 'webm';
-        }
-      } else if (videoFormat === 'mov') {
-        // MOV is not directly supported by MediaRecorder, so we'll use MP4 and rename
-        if (MediaRecorder.isTypeSupported('video/mp4;codecs=h264')) {
-          mimeType = 'video/mp4;codecs=h264';
-          fileExtension = 'mov';
-          console.log('Using MP4 H.264 format for MOV export');
-        } else {
-          console.log('MP4 not supported for MOV, falling back to WebM');
-          mimeType = 'video/webm;codecs=vp8';
-          fileExtension = 'webm';
-        }
-      } else { // webm
-        if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) {
-          mimeType = 'video/webm;codecs=vp9';
-          fileExtension = 'webm';
-          console.log('Using WebM VP9 format');
-        } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp8')) {
-          mimeType = 'video/webm;codecs=vp8';
-          fileExtension = 'webm';
-          console.log('Using WebM VP8 format');
-        } else {
-          console.log('WebM not supported, using fallback');
-        }
-      }
-      
-      const mediaRecorder = new MediaRecorder(stream, {
-        mimeType: mimeType
-      });
-
-      const chunks: Blob[] = [];
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          chunks.push(event.data);
-        }
-      };
-
-      mediaRecorder.onstop = () => {
-        const blob = new Blob(chunks, { type: mimeType });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${project?.name || 'video'}.${fileExtension}`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        setIsRendering(false);
-        console.log(`Video rendering complete! Format: ${mimeType}, Extension: ${fileExtension}`);
-      };
-
-      // Start recording
-      mediaRecorder.start();
-      console.log('MediaRecorder started');
-
-      // Pre-load all images for synchronous rendering
-      const imagePromises: Promise<HTMLImageElement>[] = [];
-      const loadedImages: { [key: string]: HTMLImageElement } = {};
-      
-      timeline.forEach(item => {
-        const properties = componentProperties[item.component.id] || {};
-        if (properties.customerLogo && properties.customerLogo.data) {
-          const img = new Image();
-          const promise = new Promise<HTMLImageElement>((resolve) => {
-            img.onload = () => resolve(img);
-            img.src = properties.customerLogo.data;
-          });
-          imagePromises.push(promise);
-          loadedImages[item.component.id] = img;
-        }
-      });
-
-      // Wait for all images to load before starting video rendering
-      Promise.all(imagePromises).then(() => {
-        // Using CSS-only approach - no Lottie data needed
-        console.log('Starting video rendering with CSS-based approach');
-
-        // Start CSS-based frame-by-frame rendering
-            console.log('Starting frame-by-frame rendering...');
-        const fps = 60;
-        const frameDuration = 1000 / fps;
-            let currentFrame = 0;
-            const totalFrames = Math.ceil(totalDuration * fps);
-
-          const renderFrame = () => {
-            if (currentFrame >= totalFrames) {
-              mediaRecorder.stop();
-              return;
-            }
-
-            const currentTime = (currentFrame / fps);
-            const currentItem = timeline.find(item => 
-              currentTime >= item.start_time && currentTime < item.start_time + item.duration
-            );
-
-            // Clear canvas
-            if (hasAlphaChannel) {
-              ctx.clearRect(0, 0, canvas.width, canvas.height);
-            } else {
-              ctx.fillStyle = '#ffffff';
-              ctx.fillRect(0, 0, canvas.width, canvas.height);
-            }
-
-            if (currentItem) {
-              const component = currentItem.component;
-              const properties = componentProperties[component.id] || {};
-              
-              if (!hasAlphaChannel) {
-                ctx.fillStyle = properties.backgroundColor || '#fca5a5';
-                ctx.fillRect(0, 0, canvas.width, canvas.height);
-              }
-              
-              if (component.type === 'customer_logo_split') {
-                const progress = Math.min(1, (currentTime - currentItem.start_time) / currentItem.duration);
-              const totalFrames = 300;
-                const frame = Math.floor(progress * totalFrames);
-                renderLogoSplitFrame(ctx, frame, totalFrames, componentProperties[component.id] || {}, loadedImages, component);
-              } else {
-                ctx.fillStyle = '#ffffff';
-                ctx.font = '48px Arial';
-                ctx.textAlign = 'center';
-                ctx.fillText(component.name, canvas.width / 2, canvas.height / 2);
-              }
-            }
-
-            currentFrame++;
-            setTimeout(() => {
-              requestAnimationFrame(renderFrame);
-          }, Math.max(0, frameDuration - 16));
-          };
-
-          renderFrame();
-      });
-
-    } catch (error) {
-      console.error('Error rendering video:', error);
-      setIsRendering(false);
-      alert('Error rendering video. Please try again.');
-    }
-  };
 
   const getCurrentComponent = () => {
     // Find the component that should be playing at current time
@@ -3355,18 +3240,28 @@ export default function ProjectEditor() {
             <ArrowLeftIcon className="h-6 w-6" />
           </button>
           <div>
-            <h1 className="text-xl font-semibold text-gray-900">{project.name}</h1>
+            <h1 className="text-xl font-semibold text-gray-900">
+              {isTemplate ? 'Template: ' : ''}{project.name}
+            </h1>
             <p className="text-sm text-gray-500">{project.description}</p>
           </div>
         </div>
         <div className="flex items-center space-x-2">
           <button
-            onClick={() => setShowDownloadModal(true)}
-            disabled={isRendering || timeline.length === 0}
-            className="flex items-center px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            onClick={() => setShowSettingsModal(true)}
+            disabled={loading}
+            className="flex items-center px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <ArrowDownTrayIcon className="h-4 w-4 mr-2" />
-            {isRendering ? 'Rendering...' : 'Download Video'}
+            <CogIcon className="h-4 w-4 mr-2" />
+            Settings
+          </button>
+          <button
+            onClick={handleDeleteProject}
+            disabled={loading}
+            className="flex items-center px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <TrashIcon className="h-4 w-4 mr-2" />
+            Delete {isTemplate ? 'Template' : 'Project'}
           </button>
           <div className="relative">
             <button
@@ -3375,7 +3270,7 @@ export default function ProjectEditor() {
               disabled={loading}
               className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 flex items-center"
             >
-              {loading ? 'Saving...' : 'Save'}
+{loading ? 'Saving...' : `Save ${isTemplate ? 'Template' : 'Project'}`}
               <ChevronDownIcon className="ml-1 h-4 w-4" />
             </button>
             
@@ -3394,18 +3289,20 @@ export default function ProjectEditor() {
                     disabled={loading}
                     className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-50"
                   >
-                    Save Project
+Save {isTemplate ? 'Template' : 'Project'}
                   </button>
-                  <button
-                    onClick={() => {
-                      saveAsTemplate();
-                      setShowSaveDropdown(false);
-                    }}
-                    disabled={loading}
-                    className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-50"
-                  >
-                    Save as Template
-                  </button>
+                  {!isTemplate && (
+                    <button
+                      onClick={() => {
+                        setShowSaveTemplateModal(true);
+                        setShowSaveDropdown(false);
+                      }}
+                      disabled={loading}
+                      className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-50"
+                    >
+                      Save as Template
+                    </button>
+                  )}
                 </div>
               </div>
             )}
@@ -3423,7 +3320,9 @@ export default function ProjectEditor() {
               style={{ aspectRatio: '16/9' }}
             >
               {/* Render media layers first (background) */}
-              {timelineLayers.map((layer, layerIndex) => {
+              {timelineLayers
+                .filter(layer => layer.id !== 'components-layer') // Exclude old components layer
+                .map((layer, layerIndex) => {
                 // Check if this layer is hidden by a group
                 const groupLayer = timelineLayers.find(l => l.id === 'group-layer');
                 const isHiddenByGroup = groupLayer?.items.some(groupItem => {
@@ -3434,7 +3333,9 @@ export default function ProjectEditor() {
                 
                 if (!layer.visible || isHiddenByGroup) return null;
                 
-                return layer.items.map((mediaItem) => {
+                return layer.items
+                  .filter(item => item.id !== 'settings-data') // Exclude settings-data items
+                  .map((mediaItem) => {
                   // Skip group items in preview - they don't render content
                   if ((mediaItem as any).isGroup) return null;
                   
@@ -3825,12 +3726,13 @@ export default function ProjectEditor() {
 
               {/* Media Layers */}
               {timelineLayers
+                .filter(layer => layer.id !== 'components-layer') // Exclude old components layer
                 .map((layer, layerIndex) => {
                   const activeTabData = timelineTabs.find(tab => tab.id === currentActiveTab);
                   if (!activeTabData) return null;
                   
                   // Filter items within the layer based on current tab
-                  let filteredItems = layer.items;
+                  let filteredItems = layer.items.filter(item => item.id !== 'settings-data'); // Exclude settings-data items
                   
                   if (activeTabData.type === 'main') {
                     // Main video shows items that are not in any group
@@ -4739,75 +4641,6 @@ export default function ProjectEditor() {
         </div>
       </div>
 
-      {/* Download Modal */}
-      {showDownloadModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-96 max-w-md mx-4">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Download Video</h3>
-            
-            <div className="space-y-4">
-              {/* Video Format Selection */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Video Format
-                </label>
-                <select
-                  value={videoFormat}
-                  onChange={(e) => setVideoFormat(e.target.value as 'mp4' | 'webm' | 'mov')}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
-                  disabled={isRendering}
-                >
-                  <option value="mp4">MP4 (H.264) - Most Compatible</option>
-                  <option value="webm">WebM (VP9) - Web Optimized</option>
-                  <option value="mov">MOV (H.264) - Professional</option>
-                </select>
-              </div>
-
-              {/* Alpha Channel Option */}
-              <div>
-                <label className="flex items-center">
-                  <input
-                    type="checkbox"
-                    checked={hasAlphaChannel}
-                    onChange={(e) => setHasAlphaChannel(e.target.checked)}
-                    disabled={isRendering}
-                    className="mr-2"
-                  />
-                  <span className="text-sm font-medium text-gray-700">
-                    Transparent Background (Alpha Channel)
-                  </span>
-                </label>
-                <p className="text-xs text-gray-500 mt-1">
-                  {hasAlphaChannel 
-                    ? 'Video will have transparent background - ideal for overlays'
-                    : 'Video will have solid background color'
-                  }
-                </p>
-              </div>
-            </div>
-
-            <div className="flex justify-end space-x-3 mt-6">
-              <button
-                onClick={() => setShowDownloadModal(false)}
-                disabled={isRendering}
-                className="px-4 py-2 text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300 disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  setShowDownloadModal(false);
-                  downloadVideo();
-                }}
-                disabled={isRendering || timeline.length === 0}
-                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isRendering ? 'Rendering...' : `Download ${videoFormat.toUpperCase()}`}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Fullscreen Preview */}
       {showPreviewModal && (
@@ -4826,7 +4659,9 @@ export default function ProjectEditor() {
                 
                 if (!layer.visible || isHiddenByGroup) return null;
                 
-                return layer.items.map((mediaItem) => {
+                return layer.items
+                  .filter(item => item.id !== 'settings-data') // Exclude settings-data items
+                  .map((mediaItem) => {
                   // Skip group items in preview - they don't render content
                   if ((mediaItem as any).isGroup) return null;
                   
@@ -4949,6 +4784,24 @@ export default function ProjectEditor() {
         autoPlay={!pathname.includes('/watch')}
         startWithControlsHidden={!pathname.includes('/watch')}
       />
+
+      {/* Save Template Modal */}
+      <SaveTemplateModal
+        isOpen={showSaveTemplateModal}
+        onClose={() => setShowSaveTemplateModal(false)}
+        onSaveTemplate={saveAsTemplate}
+        defaultName={project ? `${project.name} Template` : ''}
+        defaultDescription={project ? `Template based on project: ${project.description || project.name}` : ''}
+      />
+
+      {/* Project Settings Modal */}
+        <ProjectSettingsModal
+          isOpen={showSettingsModal}
+          onClose={() => setShowSettingsModal(false)}
+          project={project}
+          onSave={handleSaveSettings}
+          isTemplate={isTemplate}
+        />
 
       {/* Toast Notification */}
       {toast && (

@@ -62,7 +62,7 @@ export default function Home() {
       setTemplates(templatesRes.data.data || []);
     } catch (err) {
       console.error('Detailed error:', err);
-      setError(`Failed to load data from backend: ${err.message}`);
+      setError(`Failed to load data from backend: ${err instanceof Error ? err.message : 'Unknown error'}`);
       // Set empty arrays to prevent undefined errors
       setProjects([]);
       setTemplates([]);
@@ -83,29 +83,11 @@ export default function Home() {
   const handleCreateProjectFromTemplate = async (template: any, projectData: { name: string; description: string }) => {
     setUsingTemplate(template.id);
     try {
-      // Get the full template data to copy timeline and settings
-      const templateResponse = await apiEndpoints.getTemplate(template.id);
-      const fullTemplate = templateResponse.data.data;
-      
-      // Create project with template data copied over
+      // Create project with template_id - backend will handle copying template data
       const newProjectData = {
         name: projectData.name,
         description: projectData.description,
-        template_id: template.id,
-        // Copy timeline and settings from template
-        timeline: fullTemplate.timeline || [],
-        settings: fullTemplate.settings || {
-          resolution: '1920x1080',
-          frame_rate: 30,
-          duration: 0
-        },
-        // Copy any additional template data
-        merge_fields: fullTemplate.merge_fields || {},
-        render_settings: {
-          quality: 'high',
-          format: 'mp4',
-          codec: 'h264'
-        }
+        template_id: template.id
       };
 
       console.log('Creating project from template with data:', newProjectData);
@@ -129,6 +111,11 @@ export default function Home() {
   const handleDeleteTemplate = (template: any) => {
     setTemplateToDelete(template);
     setShowDeleteTemplateModal(true);
+  };
+
+  const handleEditTemplate = (template: any) => {
+    // Navigate to project editor with template flag
+    window.location.href = `/projects/${template.id}/edit?template=true`;
   };
 
   const confirmDeleteTemplate = async () => {
@@ -379,6 +366,13 @@ export default function Home() {
                           >
                             <DocumentDuplicateIcon className="h-4 w-4 mr-1" />
                             Use Template
+                          </button>
+                          <button
+                            onClick={() => handleEditTemplate(template)}
+                            className="inline-flex items-center px-3 py-2 border border-gray-300 text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+                          >
+                            <PencilIcon className="h-4 w-4 mr-1" />
+                            Edit
                           </button>
                           <button
                             onClick={() => handleDeleteTemplate(template)}

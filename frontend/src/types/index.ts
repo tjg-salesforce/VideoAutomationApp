@@ -11,6 +11,17 @@ export interface Project {
   created_by?: string;
   metadata?: Record<string, any>;
   timeline?: TimelineItem[];
+  settings?: {
+    duration?: number;
+    resolution?: string;
+    frame_rate?: number;
+    mediaAssets?: any[];
+    timelineLayers?: any[];
+    timelineTabs?: TimelineTab[];
+    timelineZoom?: number;
+    mediaProperties?: Record<string, any>;
+    componentProperties?: Record<string, any>;
+  };
   
   // New tabbed timeline system
   timelineTabs?: TimelineTab[];
