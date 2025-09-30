@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useParams, useRouter } from 'next/navigation';
-import { PlayIcon, PauseIcon, TrashIcon, ArrowLeftIcon, ArrowDownTrayIcon, ScissorsIcon, ArrowsPointingOutIcon } from '@heroicons/react/24/outline';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import { PlayIcon, PauseIcon, TrashIcon, ArrowLeftIcon, ArrowDownTrayIcon, ScissorsIcon, ArrowsPointingOutIcon, ShareIcon } from '@heroicons/react/24/outline';
 import { Project, Component, TimelineItem } from '@/types';
 import { apiEndpoints } from '@/lib/api';
 import ComponentRenderer from '@/components/ComponentRenderer';
@@ -128,6 +128,7 @@ function VideoTimelineControl({
 export default function ProjectEditor() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const projectId = params.id as string;
   
   const [project, setProject] = useState<Project | null>(null);
@@ -231,6 +232,7 @@ export default function ProjectEditor() {
   const [hasAlphaChannel, setHasAlphaChannel] = useState(false);
   const [showDownloadModal, setShowDownloadModal] = useState(false);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
   const [lottieData, setLottieData] = useState<any>(null);
   
   // Clip splitting state
@@ -1218,6 +1220,33 @@ export default function ProjectEditor() {
     loadComponents();
     loadLottieData();
   }, [projectId]);
+
+  // Handle URL parameters for preview mode
+  useEffect(() => {
+    const viewMode = searchParams.get('view');
+    if (viewMode === 'preview') {
+      setShowPreviewModal(true);
+    }
+  }, [searchParams]);
+
+  // Generate shareable link
+  const generateShareLink = () => {
+    const currentUrl = window.location.origin + window.location.pathname;
+    const shareUrl = `${currentUrl}?view=preview`;
+    return shareUrl;
+  };
+
+  // Copy share link to clipboard
+  const copyShareLink = async () => {
+    try {
+      const shareUrl = generateShareLink();
+      await navigator.clipboard.writeText(shareUrl);
+      alert('Share link copied to clipboard!');
+    } catch (error) {
+      console.error('Failed to copy link:', error);
+      alert('Failed to copy link. Please try again.');
+    }
+  };
 
   // Migration effect - move components to timelineLayers when they're loaded
   useEffect(() => {
@@ -3446,6 +3475,14 @@ export default function ProjectEditor() {
                   <ArrowsPointingOutIcon className="h-4 w-4 mr-1.5" />
                   Preview
                 </button>
+                <button
+                  onClick={copyShareLink}
+                  className="flex items-center px-3 py-1.5 text-sm bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-lg transition-colors"
+                  title="Copy shareable preview link"
+                >
+                  <ShareIcon className="h-4 w-4 mr-1.5" />
+                  Share
+                </button>
               </div>
               <div className="text-sm text-gray-500">
                 Total Duration: {formatTime(totalDuration)}
@@ -4788,6 +4825,7 @@ export default function ProjectEditor() {
         onClose={() => setShowPreviewModal(false)}
         isPlaying={isPlaying}
         onPlayPause={handlePlayPause}
+        hideCloseButton={searchParams.get('view') === 'preview'}
       />
     </div>
   );

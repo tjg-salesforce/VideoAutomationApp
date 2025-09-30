@@ -8,13 +8,15 @@ interface PreviewModalProps {
   onClose: () => void;
   isPlaying: boolean;
   onPlayPause: () => void;
+  hideCloseButton?: boolean;
 }
 
 export default function PreviewModal({
   isOpen,
   onClose,
   isPlaying,
-  onPlayPause
+  onPlayPause,
+  hideCloseButton = false
 }: PreviewModalProps) {
   const [showControls, setShowControls] = useState(true);
   const [mouseTimeout, setMouseTimeout] = useState<NodeJS.Timeout | null>(null);
@@ -65,7 +67,7 @@ export default function PreviewModal({
       onMouseMove={handleMouseMove}
     >
       {/* Close button */}
-      {showControls && (
+      {showControls && !hideCloseButton && (
         <button
           onClick={onClose}
           className="absolute top-4 right-4 p-2 bg-black bg-opacity-50 text-white rounded-full hover:bg-opacity-70 transition-all"
