@@ -1248,6 +1248,21 @@ export default function ProjectEditor() {
     }
   };
 
+  // Skip functions for preview controls
+  const handleSkipBackward = () => {
+    const newTime = Math.max(0, currentTime - 10);
+    setCurrentTime(newTime);
+  };
+
+  const handleSkipForward = () => {
+    const newTime = Math.min(totalDuration, currentTime + 10);
+    setCurrentTime(newTime);
+  };
+
+  const handleSeek = (time: number) => {
+    setCurrentTime(time);
+  };
+
   // Migration effect - move components to timelineLayers when they're loaded
   useEffect(() => {
     if (timeline.length > 0) {
@@ -4826,6 +4841,11 @@ export default function ProjectEditor() {
         isPlaying={isPlaying}
         onPlayPause={handlePlayPause}
         hideCloseButton={searchParams.get('view') === 'preview'}
+        currentTime={currentTime}
+        totalDuration={totalDuration}
+        onSeek={handleSeek}
+        onSkipBackward={handleSkipBackward}
+        onSkipForward={handleSkipForward}
       />
     </div>
   );
