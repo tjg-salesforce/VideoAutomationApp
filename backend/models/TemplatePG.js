@@ -198,7 +198,7 @@ class Template {
     Object.keys(updateData).forEach(key => {
       if (key !== 'id') {
         fields.push(`${key} = $${paramCount}`);
-        if (key === 'merge_fields' || key === 'timeline' || key === 'assets') {
+        if (key === 'merge_fields' || key === 'timeline' || key === 'assets' || key === 'settings') {
           values.push(JSON.stringify(updateData[key]));
         } else {
           values.push(updateData[key]);

@@ -202,6 +202,8 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
   try {
     const { id } = req.params;
+    console.log(`Updating template ${id} with data:`, JSON.stringify(req.body, null, 2));
+    
     const template = await Template.getById(id);
     
     if (!template) {
@@ -219,9 +221,11 @@ router.put('/:id', async (req, res) => {
     });
   } catch (error) {
     console.error('Error updating template:', error);
+    console.error('Template update error details:', error.message);
     res.status(500).json({ 
       success: false,
-      error: 'Failed to update template' 
+      error: 'Failed to update template',
+      details: error.message
     });
   }
 });
