@@ -46,7 +46,7 @@ export default function Home() {
       console.log('Loading data from backend...');
       
       const [projectsRes, templatesRes] = await Promise.all([
-        apiEndpoints.getProjects().catch(err => {
+        apiEndpoints.getProjects('default-user').catch(err => {
           console.error('Projects API error:', err);
           return { data: { data: [] } }; // Return empty array on error
         }),

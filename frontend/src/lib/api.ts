@@ -31,8 +31,8 @@ export const apiEndpoints = {
   deleteComponent: (id: string) => api.delete(`/api/components/${id}`),
   
   // Projects
-  getProjects: (ownerId: string = 'default-user', lightweight: boolean = true) => 
-    api.get(`/api/projects?ownerId=${ownerId}&lightweight=${lightweight}`),
+  getProjects: (ownerId: string = 'default-user') => 
+    api.get(`/api/projects?ownerId=${ownerId}`),
   getProject: (id: string) => api.get(`/api/projects/${id}`),
   createProject: (data: any) => api.post('/api/projects', { ...data, ownerId: 'default-user' }),
   updateProject: (id: string, data: any) => api.put(`/api/projects/${id}`, data),

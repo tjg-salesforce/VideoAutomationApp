@@ -7,15 +7,6 @@ const initializePostgres = () => {
     pool = new Pool({
       connectionString: process.env.DATABASE_URL,
       ssl: process.env.DATABASE_URL && process.env.DATABASE_URL.includes('amazonaws.com') ? { rejectUnauthorized: false } : false,
-      max: 10, // Reduced from 20 to prevent connection exhaustion
-      min: 2,  // Keep minimum connections alive
-      idleTimeoutMillis: 60000, // Increased from 30000
-      connectionTimeoutMillis: 5000, // Reduced from 10000
-      acquireTimeoutMillis: 5000, // Reduced from 10000
-      createTimeoutMillis: 5000, // Reduced from 10000
-      destroyTimeoutMillis: 2000, // Reduced from 5000
-      reapIntervalMillis: 1000, // Check for idle connections every second
-      createRetryIntervalMillis: 200, // Retry connection creation
     });
 
     // Handle pool errors

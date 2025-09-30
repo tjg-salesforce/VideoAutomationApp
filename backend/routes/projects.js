@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const Project = require('../models/ProjectPG');
-const { initializePostgres } = require('../config/postgres');
+const { initializePostgres, query } = require('../config/postgres');
 
 // Initialize PostgreSQL on first request
 router.use((req, res, next) => {
@@ -14,48 +14,19 @@ router.use((req, res, next) => {
   }
 });
 
-// GET /api/projects - Get all projects for a user (lightweight list)
+// GET /api/projects - Get all projects for a user
 router.get('/', async (req, res) => {
-  const startTime = Date.now();
   try {
-    const { ownerId, lightweight } = req.query;
+    const { ownerId } = req.query;
     const userId = ownerId || 'default-user'; // Default user for MVP
 
-    console.log(`Loading projects for user ${userId} (lightweight: ${lightweight})...`);
-
-    if (lightweight === 'true') {
-      // Lightweight query - only get basic project info, not heavy JSONB fields
-      const { query } = require('../config/postgres');
-      const queryStartTime = Date.now();
-      const result = await query(`
-        SELECT id, name, description, status, created_at, updated_at 
-        FROM projects 
-        WHERE owner_id = $1 
-        ORDER BY updated_at DESC
-      `, [userId]);
-      const queryTime = Date.now() - queryStartTime;
-      
-      const totalTime = Date.now() - startTime;
-      console.log(`Projects loaded: ${result.rows.length} projects in ${queryTime}ms (query) + ${totalTime - queryTime}ms (processing) = ${totalTime}ms total`);
-      
-      res.json({
-        success: true,
-        data: result.rows
-      });
-    } else {
-      // Full query with all data
-      const projects = await Project.getByOwner(userId);
-      const totalTime = Date.now() - startTime;
-      console.log(`Full projects loaded: ${projects.length} projects in ${totalTime}ms`);
-      
-      res.json({
-        success: true,
-        data: projects.map(project => project.toJSON())
-      });
-    }
+    const projects = await Project.getByOwner(userId);
+    res.json({
+      success: true,
+      data: projects.map(project => project.toJSON())
+    });
   } catch (error) {
-    const totalTime = Date.now() - startTime;
-    console.error(`Error getting projects after ${totalTime}ms:`, error);
+    console.error('Error getting projects:', error);
     res.status(500).json({ 
       success: false,
       error: 'Failed to get projects' 
@@ -71,7 +42,6 @@ router.get('/:id', async (req, res) => {
     console.log(`Loading project ${id}...`);
     
     // Use direct SQL query for better performance with specific columns
-    const { query } = require('../config/postgres');
     const result = await query(`
       SELECT 
         id, name, description, template_id, status, owner_id, locked_by,
