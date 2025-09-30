@@ -14,6 +14,8 @@ interface PreviewModalProps {
   onSeek?: (time: number) => void;
   onSkipBackward?: () => void;
   onSkipForward?: () => void;
+  autoPlay?: boolean;
+  startWithControlsHidden?: boolean;
 }
 
 export default function PreviewModal({
@@ -26,11 +28,14 @@ export default function PreviewModal({
   totalDuration = 0,
   onSeek,
   onSkipBackward,
-  onSkipForward
+  onSkipForward,
+  autoPlay = false,
+  startWithControlsHidden = false
 }: PreviewModalProps) {
-  const [showControls, setShowControls] = useState(true);
+  const [showControls, setShowControls] = useState(!startWithControlsHidden);
   const [mouseTimeout, setMouseTimeout] = useState<NodeJS.Timeout | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [hasAutoPlayed, setHasAutoPlayed] = useState(false);
   const timelineRef = useRef<HTMLDivElement>(null);
 
   // Format time helper
@@ -135,6 +140,25 @@ export default function PreviewModal({
     }
   }, [isDragging, handleTimelineMouseMove, handleTimelineMouseUp]);
 
+  // Handle autoplay when modal opens (only once)
+  useEffect(() => {
+    if (isOpen && autoPlay && !hasAutoPlayed && !isPlaying) {
+      // Small delay to ensure modal is fully rendered
+      const timer = setTimeout(() => {
+        onPlayPause();
+        setHasAutoPlayed(true);
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [isOpen, autoPlay, hasAutoPlayed, isPlaying, onPlayPause]);
+
+  // Reset autoplay flag when modal closes
+  useEffect(() => {
+    if (!isOpen) {
+      setHasAutoPlayed(false);
+    }
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   return (
@@ -146,10 +170,10 @@ export default function PreviewModal({
       {showControls && !hideCloseButton && (
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 p-2 bg-red-500 bg-opacity-80 text-white rounded-full hover:bg-opacity-100 transition-all"
+          className="absolute top-4 right-4 p-2 bg-red-500 bg-opacity-80 text-white rounded-full hover:bg-opacity-100 hover:scale-110 hover:border-2 hover:border-white transition-all duration-200"
           style={{ zIndex: 9999 }}
         >
-          <XMarkIcon className="h-6 w-6" />
+          <XMarkIcon className="h-6 w-6 stroke-1 hover:stroke-3 transition-all duration-200" />
         </button>
       )}
 

@@ -1,7 +1,14 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  async rewrites() {
+    return [
+      {
+        source: '/projects/:id/watch',
+        destination: '/projects/:id/edit?view=preview'
+      }
+    ];
+  }
 };
 
 export default nextConfig;

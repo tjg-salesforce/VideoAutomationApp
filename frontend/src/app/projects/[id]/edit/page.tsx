@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import { useParams, useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { PlayIcon, PauseIcon, TrashIcon, ArrowLeftIcon, ArrowDownTrayIcon, ScissorsIcon, ArrowsPointingOutIcon, ShareIcon } from '@heroicons/react/24/outline';
 import { Project, Component, TimelineItem } from '@/types';
 import { apiEndpoints } from '@/lib/api';
@@ -130,6 +130,7 @@ export default function ProjectEditor() {
   const params = useParams();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const pathname = usePathname();
   const projectId = params.id as string;
   
   const [project, setProject] = useState<Project | null>(null);
@@ -1226,10 +1227,11 @@ export default function ProjectEditor() {
   // Handle URL parameters for preview mode
   useEffect(() => {
     const viewMode = searchParams.get('view');
-    if (viewMode === 'preview') {
+    const isWatchMode = pathname.includes('/watch');
+    if (viewMode === 'preview' || isWatchMode) {
       setShowPreviewModal(true);
     }
-  }, [searchParams]);
+  }, [searchParams, pathname]);
 
   // Generate shareable link
   const generateShareLink = () => {
@@ -3274,7 +3276,7 @@ export default function ProjectEditor() {
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading project...</p>
+          <p className="mt-4 text-gray-600">{pathname.includes('/watch') ? 'Loading video...' : 'Loading project...'}</p>
         </div>
       </div>
     );
@@ -4842,12 +4844,14 @@ export default function ProjectEditor() {
         onClose={() => setShowPreviewModal(false)}
         isPlaying={isPlaying}
         onPlayPause={handlePlayPause}
-        hideCloseButton={searchParams.get('view') === 'preview'}
+        hideCloseButton={searchParams.get('view') === 'preview' || pathname.includes('/watch')}
         currentTime={currentTime}
         totalDuration={totalDuration}
         onSeek={handleSeek}
         onSkipBackward={handleSkipBackward}
         onSkipForward={handleSkipForward}
+        autoPlay={!pathname.includes('/watch')}
+        startWithControlsHidden={!pathname.includes('/watch')}
       />
 
       {/* Toast Notification */}

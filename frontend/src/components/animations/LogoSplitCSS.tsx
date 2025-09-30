@@ -99,7 +99,7 @@ export default function LogoSplitCSS({
     // Handle out phase (slide out) - 2x faster logo speeds
     if (outPhase > 0) {
       const salesforceBgSlideOffset = outPhase * 400; // Blue bg 2x faster
-      const salesforceLogoSlideOffset = outPhase * 1200; // Salesforce logo 2x faster
+      const salesforceLogoSlideOffset = outPhase * 1638; // Salesforce logo 35% faster than before
       
       if (salesforceBgRef.current) {
         salesforceBgRef.current.style.transform = `translate(0, -50%) translateX(-${salesforceBgSlideOffset}%)`;
