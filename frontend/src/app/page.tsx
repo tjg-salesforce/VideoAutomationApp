@@ -2,25 +2,19 @@
 
 import { useState, useEffect } from 'react';
 import { apiEndpoints } from '@/lib/api';
-import { Project, Template, Component } from '@/types';
-import { PlusIcon, PlayIcon, DocumentTextIcon, CubeIcon, EyeIcon, PencilIcon, TrashIcon } from '@heroicons/react/24/outline';
+import { Project } from '@/types';
+import { PlusIcon, PlayIcon, PencilIcon, TrashIcon, MagnifyingGlassIcon } from '@heroicons/react/24/outline';
 import NewProjectModal from '@/components/NewProjectModal';
-import TemplateDetailsModal from '@/components/TemplateDetailsModal';
-import ComponentDetailsModal from '@/components/ComponentDetailsModal';
 
 export default function Home() {
   const [projects, setProjects] = useState<Project[]>([]);
-  const [templates, setTemplates] = useState<Template[]>([]);
-  const [components, setComponents] = useState<Component[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
   // Modal states
   const [showNewProjectModal, setShowNewProjectModal] = useState(false);
-  const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
-  const [showTemplateModal, setShowTemplateModal] = useState(false);
-  const [selectedComponent, setSelectedComponent] = useState<Component | null>(null);
-  const [showComponentModal, setShowComponentModal] = useState(false);
+  const [activeTab, setActiveTab] = useState<'projects' | 'templates'>('projects');
+  const [searchTerm, setSearchTerm] = useState('');
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -36,17 +30,11 @@ export default function Home() {
       setLoading(true);
       console.log('Loading data from backend...');
       
-      const [projectsRes, templatesRes, componentsRes] = await Promise.all([
-        apiEndpoints.getProjects(),
-        apiEndpoints.getTemplates(),
-        apiEndpoints.getComponents(),
-      ]);
+      const projectsRes = await apiEndpoints.getProjects();
       
-      console.log('API responses:', { projectsRes, templatesRes, componentsRes });
+      console.log('API responses:', { projectsRes });
       
       setProjects(projectsRes.data.data || []);
-      setTemplates(templatesRes.data.data || []);
-      setComponents(componentsRes.data.data || []);
     } catch (err) {
       console.error('Detailed error:', err);
       setError(`Failed to load data from backend: ${err.message}`);
@@ -59,25 +47,16 @@ export default function Home() {
     loadData(); // Refresh the data
   };
 
-  const handleTemplateClick = (template: Template) => {
-    setSelectedTemplate(template);
-    setShowTemplateModal(true);
-  };
+  // Filter projects based on search term
+  const filteredProjects = projects.filter(project => {
+    const searchLower = searchTerm.toLowerCase();
+    return (
+      project.name.toLowerCase().includes(searchLower) ||
+      (project.description && project.description.toLowerCase().includes(searchLower))
+    );
+  });
 
-  const handleUseTemplate = (template: Template) => {
-    setFormData({
-      name: `New ${template.name} Project`,
-      description: `Project created from ${template.name} template`,
-      template_id: template.id,
-    });
-    setShowTemplateModal(false);
-    setShowNewProjectModal(true);
-  };
 
-  const handleComponentClick = (component: Component) => {
-    setSelectedComponent(component);
-    setShowComponentModal(true);
-  };
 
   const handleEditProject = (project: Project) => {
     // Navigate to the project editor page
@@ -135,14 +114,6 @@ export default function Home() {
               </span>
             </div>
             <div className="flex items-center space-x-4">
-              <nav className="flex space-x-4">
-                <a
-                  href="/components"
-                  className="text-gray-600 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium"
-                >
-                  Components
-                </a>
-              </nav>
               <button 
                 onClick={() => setShowNewProjectModal(true)}
                 className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
@@ -157,76 +128,79 @@ export default function Home() {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Stats Overview */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <div className="bg-white overflow-hidden shadow rounded-lg">
-            <div className="p-5">
-              <div className="flex items-center">
-                <div className="flex-shrink-0">
-                  <PlayIcon className="h-6 w-6 text-blue-600" />
-                </div>
-                <div className="ml-5 w-0 flex-1">
-                  <dl>
-                    <dt className="text-sm font-medium text-gray-500 truncate">Active Projects</dt>
-                    <dd className="text-lg font-medium text-gray-900">{projects.length}</dd>
-                  </dl>
-                </div>
-              </div>
-            </div>
-          </div>
 
-          <div className="bg-white overflow-hidden shadow rounded-lg">
-            <div className="p-5">
-              <div className="flex items-center">
-                <div className="flex-shrink-0">
-                  <DocumentTextIcon className="h-6 w-6 text-green-600" />
-                </div>
-                <div className="ml-5 w-0 flex-1">
-                  <dl>
-                    <dt className="text-sm font-medium text-gray-500 truncate">Templates</dt>
-                    <dd className="text-lg font-medium text-gray-900">{templates.length}</dd>
-                  </dl>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white overflow-hidden shadow rounded-lg">
-            <div className="p-5">
-              <div className="flex items-center">
-                <div className="flex-shrink-0">
-                  <CubeIcon className="h-6 w-6 text-purple-600" />
-                </div>
-                <div className="ml-5 w-0 flex-1">
-                  <dl>
-                    <dt className="text-sm font-medium text-gray-500 truncate">Components</dt>
-                    <dd className="text-lg font-medium text-gray-900">{components.length}</dd>
-                  </dl>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Recent Projects */}
+        {/* Projects and Templates Tabs */}
         <div className="bg-white shadow rounded-lg">
           <div className="px-4 py-5 sm:p-6">
-            <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">Recent Projects</h3>
-            {projects.length === 0 ? (
+            <div className="border-b border-gray-200 mb-6">
+              <nav className="-mb-px flex space-x-8">
+                <button 
+                  onClick={() => setActiveTab('projects')}
+                  className={`py-2 px-1 text-sm font-medium border-b-2 ${
+                    activeTab === 'projects' 
+                      ? 'border-blue-500 text-blue-600' 
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  My Projects ({searchTerm ? `${filteredProjects.length}/${projects.length}` : projects.length})
+                </button>
+                <button 
+                  onClick={() => setActiveTab('templates')}
+                  className={`py-2 px-1 text-sm font-medium border-b-2 ${
+                    activeTab === 'templates' 
+                      ? 'border-blue-500 text-blue-600' 
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  Video Templates (2)
+                </button>
+              </nav>
+            </div>
+            
+            {/* My Projects Tab Content */}
+            <div className={activeTab === 'projects' ? 'block' : 'hidden'}>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg leading-6 font-medium text-gray-900">My Projects</h3>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <MagnifyingGlassIcon className="h-5 w-5 text-gray-400" />
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="Search projects..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="block w-64 pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                  />
+                </div>
+              </div>
+            {filteredProjects.length === 0 ? (
               <div className="text-center py-8">
                 <PlayIcon className="mx-auto h-12 w-12 text-gray-400" />
-                <h3 className="mt-2 text-sm font-medium text-gray-900">No projects yet</h3>
-                <p className="mt-1 text-sm text-gray-500">Get started by creating a new project.</p>
-                <div className="mt-6">
-                  <button className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700">
-                    <PlusIcon className="h-4 w-4 mr-2" />
-                    New Project
-                  </button>
-                </div>
+                <h3 className="mt-2 text-sm font-medium text-gray-900">
+                  {searchTerm ? 'No projects found' : 'No projects yet'}
+                </h3>
+                <p className="mt-1 text-sm text-gray-500">
+                  {searchTerm 
+                    ? `No projects match "${searchTerm}". Try a different search term.`
+                    : 'Get started by creating a new project.'
+                  }
+                </p>
+                {!searchTerm && (
+                  <div className="mt-6">
+                    <button 
+                      onClick={() => setShowNewProjectModal(true)}
+                      className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
+                    >
+                      <PlusIcon className="h-4 w-4 mr-2" />
+                      New Project
+                    </button>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="space-y-3">
-                {projects.map((project) => (
+                {filteredProjects.map((project) => (
                   <div key={project.id} className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50">
                     <div className="flex-1">
                       <h4 className="text-sm font-medium text-gray-900">{project.name}</h4>
@@ -272,68 +246,45 @@ export default function Home() {
                 ))}
               </div>
             )}
-          </div>
-        </div>
-
-        {/* Templates Preview */}
-        <div className="mt-8 bg-white shadow rounded-lg">
-          <div className="px-4 py-5 sm:p-6">
-            <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">Available Templates</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {templates.map((template) => (
-                <div 
-                  key={template.id} 
-                  className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 cursor-pointer transition-colors"
-                  onClick={() => handleTemplateClick(template)}
-                >
+            </div>
+            
+            {/* Video Templates Tab Content */}
+            <div className={activeTab === 'templates' ? 'block' : 'hidden'}>
+              <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">Video Templates</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Roadmap Placeholder Items */}
+                <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
-                      <h4 className="text-sm font-medium text-gray-900">{template.name}</h4>
-                      <p className="text-sm text-gray-500 mt-1">{template.description}</p>
+                      <h4 className="text-sm font-medium text-gray-500">Template 1</h4>
+                      <p className="text-sm text-gray-400 mt-1">Templates are roadmap items comprised of components and media files for easy re-use of popular videos</p>
                       <div className="mt-2 flex items-center justify-between">
-                        <span className="text-xs text-gray-500">{template.category}</span>
-                        {template.duration && (
-                          <span className="text-xs text-gray-500">{template.duration}s</span>
-                        )}
+                        <span className="text-xs text-gray-400">Roadmap</span>
+                        <span className="text-xs text-gray-400">Coming Soon</span>
                       </div>
                     </div>
-                    <EyeIcon className="h-4 w-4 text-gray-400 ml-2" />
+                    <div className="h-4 w-4 bg-gray-300 rounded ml-2" />
                   </div>
                 </div>
-              ))}
+                
+                <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <h4 className="text-sm font-medium text-gray-500">Template 2</h4>
+                      <p className="text-sm text-gray-400 mt-1">Templates are roadmap items comprised of components and media files for easy re-use of popular videos</p>
+                      <div className="mt-2 flex items-center justify-between">
+                        <span className="text-xs text-gray-400">Roadmap</span>
+                        <span className="text-xs text-gray-400">Coming Soon</span>
+                      </div>
+                    </div>
+                    <div className="h-4 w-4 bg-gray-300 rounded ml-2" />
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
 
-        {/* Components Preview */}
-        <div className="mt-8 bg-white shadow rounded-lg">
-          <div className="px-4 py-5 sm:p-6">
-            <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">Available Components</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              {components.map((component) => (
-                <div 
-                  key={component.id} 
-                  className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 cursor-pointer transition-colors"
-                  onClick={() => handleComponentClick(component)}
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <h4 className="text-sm font-medium text-gray-900">{component.name}</h4>
-                      <p className="text-xs text-gray-500 mt-1">{component.type}</p>
-                      <div className="mt-2 flex items-center justify-between">
-                        <span className="text-xs text-gray-500">{component.category}</span>
-                        {component.duration && (
-                          <span className="text-xs text-gray-500">{component.duration}s</span>
-                        )}
-                      </div>
-                    </div>
-                    <EyeIcon className="h-4 w-4 text-gray-400 ml-2" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
       </main>
 
       {/* Modals */}
@@ -341,21 +292,9 @@ export default function Home() {
         isOpen={showNewProjectModal}
         onClose={() => setShowNewProjectModal(false)}
         onProjectCreated={handleProjectCreated}
-        templates={templates}
+        templates={[]}
       />
 
-      <TemplateDetailsModal
-        template={selectedTemplate}
-        isOpen={showTemplateModal}
-        onClose={() => setShowTemplateModal(false)}
-        onUseTemplate={handleUseTemplate}
-      />
-
-      <ComponentDetailsModal
-        component={selectedComponent}
-        isOpen={showComponentModal}
-        onClose={() => setShowComponentModal(false)}
-      />
 
     </div>
   );
