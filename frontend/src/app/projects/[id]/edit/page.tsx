@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { PlayIcon, PauseIcon, TrashIcon, ArrowLeftIcon, ArrowDownTrayIcon, ScissorsIcon } from '@heroicons/react/24/outline';
+import { PlayIcon, PauseIcon, TrashIcon, ArrowLeftIcon, ArrowDownTrayIcon, ScissorsIcon, ArrowsPointingOutIcon } from '@heroicons/react/24/outline';
 import { Project, Component, TimelineItem } from '@/types';
 import { apiEndpoints } from '@/lib/api';
 import ComponentRenderer from '@/components/ComponentRenderer';
@@ -10,6 +10,7 @@ import { getComponentSchema, getDefaultProperties } from '@/lib/componentSchemas
 import ComponentPropertiesPanel from '@/components/ComponentPropertiesPanel';
 import TimelineTabBar from '@/components/TimelineTabBar';
 import { useTimelineTabs } from '@/hooks/useTimelineTabs';
+import PreviewModal from '@/components/PreviewModal';
 import lottie from 'lottie-web';
 
 // Video component that responds to timeline controls
@@ -229,6 +230,7 @@ export default function ProjectEditor() {
   const [videoFormat, setVideoFormat] = useState<'mp4' | 'webm' | 'mov'>('mp4');
   const [hasAlphaChannel, setHasAlphaChannel] = useState(false);
   const [showDownloadModal, setShowDownloadModal] = useState(false);
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [lottieData, setLottieData] = useState<any>(null);
   
   // Clip splitting state
@@ -3272,7 +3274,10 @@ export default function ProjectEditor() {
         <div className="flex-1 flex flex-col">
           {/* Preview */}
           <div className="flex-1 flex items-center justify-center p-6 bg-gray-100">
-            <div className="w-full h-full max-w-6xl relative" style={{ aspectRatio: '16/9' }}>
+            <div 
+              className="w-full h-full max-w-6xl relative" 
+              style={{ aspectRatio: '16/9' }}
+            >
               {/* Render media layers first (background) */}
               {timelineLayers.map((layer, layerIndex) => {
                 // Check if this layer is hidden by a group
@@ -3433,6 +3438,14 @@ export default function ProjectEditor() {
                 <div className="text-sm text-gray-600">
                   {formatTime(currentTime)} / {formatTime(totalDuration)}
                 </div>
+                <button
+                  onClick={() => setShowPreviewModal(true)}
+                  className="flex items-center px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors"
+                  title="Open fullscreen preview"
+                >
+                  <ArrowsPointingOutIcon className="h-4 w-4 mr-1.5" />
+                  Preview
+                </button>
               </div>
               <div className="text-sm text-gray-500">
                 Total Duration: {formatTime(totalDuration)}
@@ -4643,6 +4656,139 @@ export default function ProjectEditor() {
           </div>
         </div>
       )}
+
+      {/* Fullscreen Preview */}
+      {showPreviewModal && (
+        <div className="fixed inset-0 w-screen h-screen bg-black z-60">
+          <div className="w-full h-full flex items-center justify-center">
+            <div className="w-full h-full max-w-none relative" style={{ aspectRatio: '16/9' }}>
+              {/* Render media layers first (background) */}
+              {timelineLayers.map((layer, layerIndex) => {
+                // Check if this layer is hidden by a group
+                const groupLayer = timelineLayers.find(l => l.id === 'group-layer');
+                const isHiddenByGroup = groupLayer?.items.some(groupItem => {
+                  if (!(groupItem as any).isGroup) return false;
+                  const groupItems = (groupItem as any).items || [];
+                  return layer.items.some(item => groupItems.includes(item.id)) && !groupLayer.visible;
+                });
+                
+                if (!layer.visible || isHiddenByGroup) return null;
+                
+                return layer.items.map((mediaItem) => {
+                  // Skip group items in preview - they don't render content
+                  if ((mediaItem as any).isGroup) return null;
+                  
+                  // Check if this item is within a group's display boundaries
+                  const groupLayer = timelineLayers.find(l => l.id === 'group-layer');
+                  const containingGroup = groupLayer?.items.find(groupItem => {
+                    if (!(groupItem as any).isGroup) return false;
+                    const groupItems = (groupItem as any).items || [];
+                    return groupItems.includes(mediaItem.id);
+                  });
+                  
+                  // If item is in a group, check if current time is within group's display boundaries
+                  if (containingGroup) {
+                    const groupStart = containingGroup.start_time;
+                    const groupEnd = containingGroup.start_time + containingGroup.duration;
+                    if (currentTime < groupStart || currentTime >= groupEnd) {
+                      return null; // Don't show content outside group boundaries
+                    }
+                  }
+                  
+                  const isActive = currentTime >= mediaItem.start_time && currentTime < mediaItem.start_time + mediaItem.duration;
+                  if (!isActive) return null;
+                  
+                  const mediaProps = mediaProperties[mediaItem.id] || {
+                    scale: 1,
+                    x: 0,
+                    y: 0,
+                    opacity: 1,
+                    rotation: 0
+                  };
+                  
+                  return (
+                    <div
+                      key={mediaItem.id}
+                      className="absolute inset-0 w-full h-full overflow-hidden"
+                      style={{ 
+                        zIndex: timelineLayers.length - layerIndex
+                      }}
+                    >
+                      <div
+                        className="w-full h-full"
+                        style={{ 
+                          transform: `translate(${mediaProps.x}px, ${mediaProps.y}px) scale(${mediaProps.scale}) rotate(${mediaProps.rotation}deg)`,
+                          opacity: mediaProps.opacity
+                        }}
+                      >
+                      {isMediaItem(mediaItem) && mediaItem.asset.type === 'video' ? (
+                          <div className="relative w-full h-full">
+                            <VideoTimelineControl
+                              src={isMediaItem(mediaItem) ? mediaItem.asset.data : ''}
+                              startTime={mediaItem.start_time}
+                              duration={mediaItem.duration}
+                              currentTime={currentTime}
+                              isPlaying={isPlaying}
+                              className="w-full h-full object-contain rounded-lg"
+                              videoStartTime={(mediaItem as any).videoStartTime || 0}
+                              videoEndTime={(mediaItem as any).videoEndTime}
+                              freezeFrame={(mediaItem as any).freezeFrame || false}
+                              freezeFrameTime={(mediaItem as any).freezeFrameTime || 0}
+                            />
+                          </div>
+                        ) : isMediaItem(mediaItem) ? (
+                          <img
+                          src={isMediaItem(mediaItem) ? mediaItem.asset.data : ''}
+                          alt={isMediaItem(mediaItem) ? mediaItem.asset.name : ''}
+                            className="w-full h-full object-contain rounded-lg"
+                          />
+                        ) : isComponentItem(mediaItem) ? (
+                          <ComponentRenderer
+                            component={mediaItem.component}
+                            properties={componentProperties[mediaItem.component.id] || {}}
+                            currentTime={Math.min(
+                              currentTime - mediaItem.start_time,
+                              mediaItem.duration
+                            )}
+                            isPlaying={isPlaying && currentTime < mediaItem.start_time + mediaItem.duration}
+                            mode="preview"
+                            timelineItem={mediaItem}
+                          />
+                        ) : null}
+                      </div>
+                    </div>
+                  );
+                });
+              })}
+              
+              {/* Render components on top */}
+              {getCurrentTimelineItem() ? (
+                <div className="absolute inset-0 w-full h-full" style={{ zIndex: timelineLayers.length + 100 }}>
+                  <ComponentRenderer
+                    component={getCurrentTimelineItem()!.component}
+                    properties={componentProperties[getCurrentTimelineItem()!.component.id] || {}}
+                    currentTime={Math.min(
+                      currentTime - getCurrentTimelineItem()!.start_time,
+                      getCurrentTimelineItem()!.duration
+                    )}
+                    isPlaying={isPlaying && currentTime < getCurrentTimelineItem()!.start_time + getCurrentTimelineItem()!.duration}
+                    mode="preview"
+                    timelineItem={getCurrentTimelineItem()!}
+                  />
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Preview Modal Overlay */}
+      <PreviewModal
+        isOpen={showPreviewModal}
+        onClose={() => setShowPreviewModal(false)}
+        isPlaying={isPlaying}
+        onPlayPause={handlePlayPause}
+      />
     </div>
   );
 }

@@ -71,8 +71,8 @@ export default function LogoSplitCSS({
     if (salesforceLogoRef.current) {
       const easedPhase = salesforceLogoPhase > 0 ? 1 - Math.pow(1 - salesforceLogoPhase, 3) : 0; // Ease-out cubic
       // Start completely off-screen to the right, slide to center at 75%
-      // Increased from 150% to 180% to start 40px further right (approximately 2.1% of 1920px)
-      const translateX = (1 - easedPhase) * 180; // Start further off-screen
+      // Increased to 250% to ensure it's completely off-screen in all container sizes
+      const translateX = (1 - easedPhase) * 250; // Start much further off-screen
       salesforceLogoRef.current.style.transform = `translate(calc(-50% + ${translateX}%), -50%) scale(1)`; // Keep centered while sliding
     }
 

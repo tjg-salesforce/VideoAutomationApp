@@ -106,7 +106,7 @@
 }
 
 @keyframes salesforceSlideIn {
-  0% { transform: translate(100vw, -50%); }
+  0% { transform: translate(100%, -50%); }
   100% { transform: translate(0, -50%); }
 }
 
@@ -117,8 +117,8 @@
 
 @keyframes salesforceLogoSlideGrowIn {
   0% {
-    left: 100vw;
-    transform: translate(calc(-50% + 180%), -50%) scale(0);
+    left: 100%;
+    transform: translate(calc(-50% + 250%), -50%) scale(0);
   }
   100% {
     left: var(--salesforce-logo-left);
@@ -155,11 +155,11 @@
 }
 
 .logo-split-canvas[data-frame="0"] .salesforce-bg {
-  transform: translate(100vw, -50%);
+  transform: translate(100%, -50%);
 }
 
 .logo-split-canvas[data-frame="30"] .salesforce-bg {
-  transform: translate(50vw, -50%);
+  transform: translate(50%, -50%);
 }
 
 .logo-split-canvas[data-frame="60"] .salesforce-bg {
@@ -179,8 +179,8 @@
 }
 
 .logo-split-canvas[data-frame="0"] .salesforce-logo-circle {
-  left: 100vw;
-  transform: translate(calc(-50% + 180%), -50%) scale(0);
+  left: 100%;
+  transform: translate(calc(-50% + 250%), -50%) scale(0);
 }
 
 .logo-split-canvas[data-frame="30"] .salesforce-logo-circle {
