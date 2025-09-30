@@ -11,6 +11,7 @@ import ComponentPropertiesPanel from '@/components/ComponentPropertiesPanel';
 import TimelineTabBar from '@/components/TimelineTabBar';
 import { useTimelineTabs } from '@/hooks/useTimelineTabs';
 import PreviewModal from '@/components/PreviewModal';
+import Toast from '@/components/Toast';
 import lottie from 'lottie-web';
 
 // Video component that responds to timeline controls
@@ -233,6 +234,7 @@ export default function ProjectEditor() {
   const [showDownloadModal, setShowDownloadModal] = useState(false);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [lottieData, setLottieData] = useState<any>(null);
   
   // Clip splitting state
@@ -1231,8 +1233,8 @@ export default function ProjectEditor() {
 
   // Generate shareable link
   const generateShareLink = () => {
-    const currentUrl = window.location.origin + window.location.pathname;
-    const shareUrl = `${currentUrl}?view=preview`;
+    const currentUrl = window.location.origin;
+    const shareUrl = `${currentUrl}/projects/${projectId}/watch`;
     return shareUrl;
   };
 
@@ -1241,10 +1243,10 @@ export default function ProjectEditor() {
     try {
       const shareUrl = generateShareLink();
       await navigator.clipboard.writeText(shareUrl);
-      alert('Share link copied to clipboard!');
+      setToast({ message: 'Watch link copied to clipboard!', type: 'success' });
     } catch (error) {
       console.error('Failed to copy link:', error);
-      alert('Failed to copy link. Please try again.');
+      setToast({ message: 'Failed to copy link. Please try again.', type: 'error' });
     }
   };
 
@@ -3493,7 +3495,7 @@ export default function ProjectEditor() {
                 <button
                   onClick={copyShareLink}
                   className="flex items-center px-3 py-1.5 text-sm bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-lg transition-colors"
-                  title="Copy shareable preview link"
+                  title="Copy watch link for customers"
                 >
                   <ShareIcon className="h-4 w-4 mr-1.5" />
                   Share
@@ -4847,6 +4849,15 @@ export default function ProjectEditor() {
         onSkipBackward={handleSkipBackward}
         onSkipForward={handleSkipForward}
       />
+
+      {/* Toast Notification */}
+      {toast && (
+        <Toast
+          message={toast.message}
+          type={toast.type}
+          onClose={() => setToast(null)}
+        />
+      )}
     </div>
   );
 }
