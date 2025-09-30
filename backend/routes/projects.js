@@ -105,6 +105,53 @@ router.post('/', async (req, res) => {
       owner_id: req.body.ownerId || req.body.owner_id || 'default-user' // Map ownerId to owner_id
     };
 
+    // If template_id is provided, fetch template data and copy it to the project
+    if (projectData.template_id) {
+      console.log(`Creating project from template: ${projectData.template_id}`);
+      
+      // Import Template model
+      const Template = require('../models/TemplatePG');
+      
+      try {
+        const template = await Template.getById(projectData.template_id);
+        if (template) {
+          console.log('Template found, copying data...');
+          
+          // Copy template data to project
+          projectData.timeline = template.timeline || [];
+          projectData.settings = template.settings || {
+            resolution: template.resolution || '1920x1080',
+            frame_rate: template.frame_rate || 30,
+            duration: template.duration || 0
+          };
+          projectData.merge_fields = template.merge_fields || {};
+          
+          // Ensure duration is properly set from template
+          if (template.duration && template.duration > 0) {
+            projectData.settings.duration = template.duration;
+          }
+          
+          console.log(`Template duration: ${template.duration}, Project duration: ${projectData.settings.duration}`);
+          
+          // Copy render settings if not provided
+          if (!projectData.render_settings) {
+            projectData.render_settings = {
+              quality: 'high',
+              format: 'mp4',
+              codec: 'h264'
+            };
+          }
+          
+          console.log('Template data copied successfully');
+        } else {
+          console.log('Template not found, creating project without template data');
+        }
+      } catch (templateError) {
+        console.error('Error fetching template:', templateError);
+        // Continue with project creation even if template fetch fails
+      }
+    }
+
     const project = new Project(projectData);
     await project.save();
 
@@ -125,6 +172,8 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
   try {
     const { id } = req.params;
+    console.log(`Updating project ${id} with data:`, JSON.stringify(req.body, null, 2));
+    
     const project = await Project.getById(id);
     
     if (!project) {
@@ -150,9 +199,12 @@ router.put('/:id', async (req, res) => {
     });
   } catch (error) {
     console.error('Error updating project:', error);
+    console.error('Error details:', error.message);
+    console.error('Error stack:', error.stack);
     res.status(500).json({ 
       success: false,
-      error: 'Failed to update project' 
+      error: 'Failed to update project',
+      details: error.message
     });
   }
 });

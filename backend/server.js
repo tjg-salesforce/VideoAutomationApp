@@ -40,6 +40,33 @@ app.use('/api/projects', projectsRouter);
 app.use('/api/templates', templatesRouter);
 app.use('/api/components', componentsRouter);
 
+// Migration endpoint
+app.post('/api/migrate', async (req, res) => {
+  try {
+    const { query } = require('./config/postgres');
+    console.log('Running database migrations...');
+    
+    // Add settings column to templates table
+    await query(`
+      ALTER TABLE templates 
+      ADD COLUMN IF NOT EXISTS settings JSONB DEFAULT '{}'
+    `);
+    
+    console.log('Database migrations completed successfully');
+    
+    res.json({
+      success: true,
+      message: 'Database migrations completed successfully'
+    });
+  } catch (error) {
+    console.error('Migration error:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Migration failed: ' + error.message
+    });
+  }
+});
+
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error(err.stack);

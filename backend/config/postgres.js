@@ -7,6 +7,12 @@ const initializePostgres = () => {
     pool = new Pool({
       connectionString: process.env.DATABASE_URL,
       ssl: process.env.DATABASE_URL && process.env.DATABASE_URL.includes('amazonaws.com') ? { rejectUnauthorized: false } : false,
+      // Increase timeouts for large operations
+      statement_timeout: 30000, // 30 seconds
+      query_timeout: 30000, // 30 seconds
+      connectionTimeoutMillis: 10000, // 10 seconds
+      idleTimeoutMillis: 30000, // 30 seconds
+      max: 20, // Maximum number of clients in the pool
     });
 
     // Handle pool errors

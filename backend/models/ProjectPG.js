@@ -131,6 +131,8 @@ class Project {
 
   // Update project
   async update(updateData) {
+    console.log(`Project.update called with data:`, JSON.stringify(updateData, null, 2));
+    
     const fields = [];
     const values = [];
     let paramCount = 1;
@@ -154,6 +156,8 @@ class Project {
     values.push(this.id);
 
     const sql = `UPDATE projects SET ${fields.join(', ')} WHERE id = $${paramCount + 1}`;
+    console.log(`Executing SQL: ${sql}`);
+    console.log(`With values:`, values);
 
     try {
       await query(sql, values);
@@ -164,6 +168,8 @@ class Project {
       return this;
     } catch (error) {
       console.error('Error updating project:', error);
+      console.error('SQL that failed:', sql);
+      console.error('Values that failed:', values);
       throw error;
     }
   }

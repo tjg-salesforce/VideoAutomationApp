@@ -12,7 +12,7 @@ class Template {
     this.duration = data.duration || 0;
     this.resolution = data.resolution || '1920x1080';
     this.frame_rate = data.frame_rate || 30;
-    this.merge_fields = data.merge_fields || [];
+    this.merge_fields = data.merge_fields || {};
     this.timeline = data.timeline || [];
     this.assets = data.assets || [];
     this.settings = data.settings || {};
@@ -21,10 +21,19 @@ class Template {
     this.created_at = data.created_at || new Date();
     this.updated_at = data.updated_at || new Date();
     this.version = data.version || '1.0.0';
+    
+    // Log duration for debugging
+    if (this.duration > 0) {
+      console.log(`Template ${this.name} duration: ${this.duration}s`);
+    }
+    
+    // Settings are stored separately and don't need to be in the timeline
   }
 
   // Save template to PostgreSQL
   async save() {
+    console.log(`Saving template: ${this.name} (timeline items: ${this.timeline?.length || 0}, assets: ${this.assets?.length || 0})`);
+    
     const sql = `
       INSERT INTO templates (
         id, name, description, category, thumbnail_url, preview_url,
@@ -50,17 +59,32 @@ class Template {
         version = EXCLUDED.version
     `;
 
+    // Pre-stringify large JSON objects to avoid timeout issues
+    const startTime = Date.now();
+    const mergeFieldsJson = JSON.stringify(this.merge_fields || {});
+    const timelineJson = JSON.stringify(this.timeline || []);
+    const assetsJson = JSON.stringify(this.assets || []);
+    const settingsJson = JSON.stringify(this.settings || {});
+    const jsonTime = Date.now() - startTime;
+    
+    if (jsonTime > 1000) {
+      console.log(`JSON stringify took ${jsonTime}ms for template: ${this.name}`);
+    }
+
     const values = [
       this.id, this.name, this.description, this.category,
       this.thumbnail_url, this.preview_url, this.duration,
-      this.resolution, this.frame_rate, JSON.stringify(this.merge_fields),
-      JSON.stringify(this.timeline), JSON.stringify(this.assets), JSON.stringify(this.settings),
+      this.resolution, this.frame_rate, mergeFieldsJson,
+      timelineJson, assetsJson, settingsJson,
       this.is_active, this.created_by, this.created_at,
       this.updated_at, this.version
     ];
 
     try {
+      const saveStartTime = Date.now();
       await query(sql, values);
+      const saveTime = Date.now() - saveStartTime;
+      console.log(`Template saved successfully in ${saveTime}ms: ${this.name}`);
       return this;
     } catch (error) {
       console.error('Error saving template:', error);
@@ -88,7 +112,7 @@ class Template {
           merge_fields: row.merge_fields,
           timeline: row.timeline,
           assets: row.assets,
-          settings: row.settings,
+          settings: row.settings || {},
           is_active: row.is_active,
           created_by: row.created_by,
           created_at: row.created_at,
