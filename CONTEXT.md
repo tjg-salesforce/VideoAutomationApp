@@ -91,7 +91,7 @@ components (id, name, type, category, file_path, duration, created_at, updated_a
 - Full CRUD operations for all three entities
 
 ### Sample Data (Seeded)
-- 2 templates: "Sales Demo - Product Overview", "Training Video - Process Walkthrough"
+- 0 templates: Placeholder templates removed
 - 4 components: "Salesforce Logo", "Success Sound Effect", "Fade In Transition", "Corporate Background"
 
 ## 🎬 TIMELINE EDITOR FEATURES (COMPLETED)

@@ -3,6 +3,17 @@ const { query, initializePostgres } = require('../config/postgres');
 
 const createTables = async () => {
   console.log('🏗️  Creating database tables...');
+  
+  // Add settings column to templates table if it doesn't exist
+  await query(`
+    ALTER TABLE templates 
+    ADD COLUMN IF NOT EXISTS settings JSONB DEFAULT '{}'
+  `);
+  
+  // Add performance indexes
+  await query(`
+    CREATE INDEX IF NOT EXISTS idx_projects_id_hash ON projects USING hash(id);
+  `);
 
   // Projects table
   await query(`
@@ -40,6 +51,7 @@ const createTables = async () => {
       merge_fields JSONB DEFAULT '[]',
       timeline JSONB DEFAULT '[]',
       assets JSONB DEFAULT '[]',
+      settings JSONB DEFAULT '{}',
       is_active BOOLEAN DEFAULT true,
       created_by VARCHAR(255),
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -82,6 +94,10 @@ const createTables = async () => {
   `);
   
   await query(`
+    CREATE INDEX IF NOT EXISTS idx_projects_id_hash ON projects USING hash(id);
+  `);
+  
+  await query(`
     CREATE INDEX IF NOT EXISTS idx_templates_category ON templates(category);
   `);
   
@@ -117,90 +133,7 @@ const seedData = async () => {
   console.log('🌱 Seeding sample data...');
 
   // Seed templates
-  const templates = [
-    {
-      id: '550e8400-e29b-41d4-a716-446655440001',
-      name: 'Sales Demo - Product Overview',
-      description: 'A professional template for showcasing product features and benefits',
-      category: 'sales',
-      duration: 120,
-      resolution: '1920x1080',
-      frame_rate: 30,
-      merge_fields: [
-        { key: 'productName', label: 'Product Name', type: 'text', required: true },
-        { key: 'customerName', label: 'Customer Name', type: 'text', required: true },
-        { key: 'keyBenefit', label: 'Key Benefit', type: 'text', required: true },
-        { key: 'ctaText', label: 'Call to Action', type: 'text', required: true }
-      ],
-      timeline: [
-        {
-          id: 'intro',
-          type: 'text',
-          startTime: 0,
-          duration: 3,
-          content: 'Welcome {{customerName}}, let me show you {{productName}}',
-          style: { fontSize: 48, color: '#ffffff', fontFamily: 'Arial' }
-        },
-        {
-          id: 'benefit',
-          type: 'text',
-          startTime: 3,
-          duration: 5,
-          content: '{{keyBenefit}}',
-          style: { fontSize: 36, color: '#00ff00', fontFamily: 'Arial' }
-        },
-        {
-          id: 'cta',
-          type: 'text',
-          startTime: 8,
-          duration: 4,
-          content: '{{ctaText}}',
-          style: { fontSize: 32, color: '#ff0000', fontFamily: 'Arial' }
-        }
-      ],
-      assets: [
-        { type: 'background', url: 'https://example.com/background.jpg' },
-        { type: 'logo', url: 'https://example.com/logo.png' }
-      ],
-      created_by: 'system'
-    },
-    {
-      id: '550e8400-e29b-41d4-a716-446655440002',
-      name: 'Training Video - Process Walkthrough',
-      description: 'Step-by-step process demonstration template',
-      category: 'training',
-      duration: 180,
-      resolution: '1920x1080',
-      frame_rate: 30,
-      merge_fields: [
-        { key: 'processName', label: 'Process Name', type: 'text', required: true },
-        { key: 'stepCount', label: 'Number of Steps', type: 'number', required: true },
-        { key: 'instructorName', label: 'Instructor Name', type: 'text', required: true }
-      ],
-      timeline: [
-        {
-          id: 'title',
-          type: 'text',
-          startTime: 0,
-          duration: 5,
-          content: '{{processName}} Training',
-          style: { fontSize: 42, color: '#ffffff', fontFamily: 'Arial' }
-        },
-        {
-          id: 'instructor',
-          type: 'text',
-          startTime: 5,
-          duration: 3,
-          content: 'Presented by {{instructorName}}',
-          style: { fontSize: 24, color: '#cccccc', fontFamily: 'Arial' }
-        }
-      ],
-      assets: [
-        { type: 'background', url: 'https://example.com/training-bg.jpg' }
-      ],
-      created_by: 'system'
-    }
-  ];
+  const templates = [];
 
   for (const template of templates) {
     await query(`

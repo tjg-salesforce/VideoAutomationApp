@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useRouter, useSearchParams, usePathname } from 'next/navigation';
-import { PlayIcon, PauseIcon, TrashIcon, ArrowLeftIcon, ArrowDownTrayIcon, ScissorsIcon, ArrowsPointingOutIcon, ShareIcon } from '@heroicons/react/24/outline';
+import { PlayIcon, PauseIcon, TrashIcon, ArrowLeftIcon, ArrowDownTrayIcon, ScissorsIcon, ArrowsPointingOutIcon, ShareIcon, ChevronDownIcon } from '@heroicons/react/24/outline';
 import { Project, Component, TimelineItem } from '@/types';
 import { apiEndpoints } from '@/lib/api';
 import ComponentRenderer from '@/components/ComponentRenderer';
@@ -62,8 +62,8 @@ function VideoTimelineControl({
           const targetVideoTime = freezeFrameTime;
           if (isFinite(targetVideoTime) && targetVideoTime >= 0 && targetVideoTime <= video.duration) {
             video.currentTime = targetVideoTime;
-        }
-      } else {
+          }
+        } else {
           // We're in the original content area - play normally
           const videoProgress = (currentTime - startTime) / originalContentDuration;
           const targetVideoTime = videoStartTime + (videoProgress * originalContentDuration);
@@ -237,6 +237,7 @@ export default function ProjectEditor() {
   const [showShareModal, setShowShareModal] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [lottieData, setLottieData] = useState<any>(null);
+  const [showSaveDropdown, setShowSaveDropdown] = useState(false);
   
   // Clip splitting state
   const [hoveredItem, setHoveredItem] = useState<{itemId: string; layerId: string} | null>(null);
@@ -1333,9 +1334,15 @@ export default function ProjectEditor() {
   }, [timelineZoom]);
 
   const loadProject = async (retries = 3) => {
+    const startTime = Date.now();
     for (let attempt = 1; attempt <= retries; attempt++) {
       try {
+        console.log(`Loading project ${projectId} (attempt ${attempt}/${retries})...`);
+        const apiStartTime = Date.now();
         const response = await apiEndpoints.getProject(projectId);
+        const apiTime = Date.now() - apiStartTime;
+        console.log(`API call completed in ${apiTime}ms`);
+        
         const projectData = response.data.data;
         setProject(projectData);
         
@@ -1397,9 +1404,12 @@ export default function ProjectEditor() {
             setMediaProperties(projectData.settings.mediaProperties);
           }
         }
+        const totalTime = Date.now() - startTime;
+        console.log(`Project ${projectId} loaded successfully in ${totalTime}ms`);
         return; // Success, exit the retry loop
       } catch (error) {
-        console.error(`Error loading project (attempt ${attempt}/${retries}):`, error);
+        const attemptTime = Date.now() - startTime;
+        console.error(`Error loading project (attempt ${attempt}/${retries}) after ${attemptTime}ms:`, error);
         
         // If it's a network error and we have retries left, wait and try again
         if (attempt < retries && (
@@ -2509,9 +2519,60 @@ export default function ProjectEditor() {
       
       // Refresh project data
       await loadProject();
+      
+      setToast({ message: 'Project saved successfully!', type: 'success' });
     } catch (error) {
       console.error('Error saving project:', error);
-      alert('Failed to save project. Please try again.');
+      setToast({ message: 'Failed to save project. Please try again.', type: 'error' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const saveAsTemplate = async () => {
+    if (!project) return;
+
+    setLoading(true);
+    try {
+      // Include component properties in the timeline items from both old timeline and new timelineLayers
+      const timelineWithProperties = timeline.map(item => ({
+        ...item,
+            properties: item.component?.id ? componentProperties[item.component.id] || {} : {}
+      }));
+
+      // Also include component properties from timelineLayers
+      const timelineLayersWithProperties = timelineLayers.map(layer => ({
+        ...layer,
+        items: layer.items.map(item => ({
+          ...item,
+          properties: isComponentItem(item) && item.component?.id 
+            ? componentProperties[item.component.id] || {} 
+            : {}
+        }))
+      }));
+
+      const templateData = {
+        name: `${project.name} Template`,
+        description: `Template based on project: ${project.description || project.name}`,
+        timeline: timelineWithProperties,
+        settings: {
+          mediaAssets,
+          timelineLayers: timelineLayersWithProperties,
+          timelineTabs,
+          timelineZoom,
+          mediaProperties,
+          componentProperties
+        },
+        isActive: true
+      };
+      
+      console.log('Saving template with data:', templateData);
+      await apiEndpoints.createTemplate(templateData);
+      
+      setToast({ message: 'Template saved successfully!', type: 'success' });
+    } catch (error) {
+      console.error('Error saving template:', error);
+      setToast({ message: 'Failed to save template. Please try again.', type: 'error' });
     } finally {
       setLoading(false);
     }
@@ -3307,13 +3368,48 @@ export default function ProjectEditor() {
             <ArrowDownTrayIcon className="h-4 w-4 mr-2" />
             {isRendering ? 'Rendering...' : 'Download Video'}
           </button>
-          <button
-            onClick={saveProject}
-            disabled={loading}
-            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
-          >
-            {loading ? 'Saving...' : 'Save Project'}
-          </button>
+          <div className="relative">
+            <button
+              onMouseEnter={() => setShowSaveDropdown(true)}
+              onMouseLeave={() => setShowSaveDropdown(false)}
+              disabled={loading}
+              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 flex items-center"
+            >
+              {loading ? 'Saving...' : 'Save'}
+              <ChevronDownIcon className="ml-1 h-4 w-4" />
+            </button>
+            
+            {showSaveDropdown && (
+              <div 
+                className="absolute right-0 mt-1 w-48 bg-white rounded-md shadow-lg border border-gray-200 z-50"
+                onMouseEnter={() => setShowSaveDropdown(true)}
+                onMouseLeave={() => setShowSaveDropdown(false)}
+              >
+                <div className="py-1">
+                  <button
+                    onClick={() => {
+                      saveProject();
+                      setShowSaveDropdown(false);
+                    }}
+                    disabled={loading}
+                    className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-50"
+                  >
+                    Save Project
+                  </button>
+                  <button
+                    onClick={() => {
+                      saveAsTemplate();
+                      setShowSaveDropdown(false);
+                    }}
+                    disabled={loading}
+                    className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-50"
+                  >
+                    Save as Template
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

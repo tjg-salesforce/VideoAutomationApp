@@ -10,10 +10,10 @@ const initializePostgres = () => {
       max: 10, // Reduced from 20 to prevent connection exhaustion
       min: 2,  // Keep minimum connections alive
       idleTimeoutMillis: 60000, // Increased from 30000
-      connectionTimeoutMillis: 10000, // Increased from 2000
-      acquireTimeoutMillis: 10000, // Add acquire timeout
-      createTimeoutMillis: 10000, // Add create timeout
-      destroyTimeoutMillis: 5000, // Add destroy timeout
+      connectionTimeoutMillis: 5000, // Reduced from 10000
+      acquireTimeoutMillis: 5000, // Reduced from 10000
+      createTimeoutMillis: 5000, // Reduced from 10000
+      destroyTimeoutMillis: 2000, // Reduced from 5000
       reapIntervalMillis: 1000, // Check for idle connections every second
       createRetryIntervalMillis: 200, // Retry connection creation
     });
@@ -50,7 +50,10 @@ const query = async (text, params, retries = 3) => {
     try {
       const res = await pool.query(text, params);
       const duration = Date.now() - start;
-      console.log('Executed query', { text, duration, rows: res.rowCount });
+      // Only log slow queries (>100ms) to reduce noise
+      if (duration > 100) {
+        console.log('Slow query detected', { text: text.substring(0, 100) + '...', duration, rows: res.rowCount });
+      }
       return res;
     } catch (error) {
       console.error(`Database query error (attempt ${attempt}/${retries}):`, error.message);

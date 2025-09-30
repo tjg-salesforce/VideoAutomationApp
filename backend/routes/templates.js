@@ -17,19 +17,64 @@ router.use((req, res, next) => {
 // GET /api/templates - Get all active templates
 router.get('/', async (req, res) => {
   try {
-    const { category } = req.query;
+    const { category, lightweight } = req.query;
     
-    let templates;
-    if (category) {
-      templates = await Template.getByCategory(category);
-    } else {
-      templates = await Template.getAllActive();
-    }
+    // Use lightweight query for list views
+    if (lightweight === 'true') {
+      const { query } = require('../config/postgres');
+      let sql = `
+        SELECT 
+          id, name, description, category, thumbnail_url, preview_url,
+          duration, resolution, frame_rate, is_active, created_by,
+          created_at, updated_at, version
+        FROM templates 
+        WHERE is_active = true
+      `;
+      const params = [];
+      
+      if (category) {
+        sql += ' AND category = $1';
+        params.push(category);
+      }
+      
+      sql += ' ORDER BY name';
+      
+      const result = await query(sql, params);
+      const templates = result.rows.map(row => ({
+        id: row.id,
+        name: row.name,
+        description: row.description,
+        category: row.category,
+        thumbnailUrl: row.thumbnail_url,
+        previewUrl: row.preview_url,
+        duration: row.duration,
+        resolution: row.resolution,
+        frameRate: row.frame_rate,
+        isActive: row.is_active,
+        createdBy: row.created_by,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+        version: row.version
+      }));
 
-    res.json({
-      success: true,
-      data: templates.map(template => template.toJSON())
-    });
+      res.json({
+        success: true,
+        data: templates
+      });
+    } else {
+      // Full data for individual template views
+      let templates;
+      if (category) {
+        templates = await Template.getByCategory(category);
+      } else {
+        templates = await Template.getAllActive();
+      }
+
+      res.json({
+        success: true,
+        data: templates.map(template => template.toJSON())
+      });
+    }
   } catch (error) {
     console.error('Error getting templates:', error);
     res.status(500).json({ 
@@ -68,6 +113,8 @@ router.get('/:id', async (req, res) => {
 // POST /api/templates - Create a new template
 router.post('/', async (req, res) => {
   try {
+    console.log('Creating template with data:', JSON.stringify(req.body, null, 2));
+    
     const templateData = {
       ...req.body,
       createdBy: req.body.createdBy || 'default-user' // TODO: Get from auth

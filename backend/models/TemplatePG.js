@@ -15,6 +15,7 @@ class Template {
     this.merge_fields = data.merge_fields || [];
     this.timeline = data.timeline || [];
     this.assets = data.assets || [];
+    this.settings = data.settings || {};
     this.is_active = data.is_active !== undefined ? data.is_active : true;
     this.created_by = data.created_by || null;
     this.created_at = data.created_at || new Date();
@@ -27,9 +28,9 @@ class Template {
     const sql = `
       INSERT INTO templates (
         id, name, description, category, thumbnail_url, preview_url,
-        duration, resolution, frame_rate, merge_fields, timeline, assets,
+        duration, resolution, frame_rate, merge_fields, timeline, assets, settings,
         is_active, created_by, created_at, updated_at, version
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
       ON CONFLICT (id) DO UPDATE SET
         name = EXCLUDED.name,
         description = EXCLUDED.description,
@@ -42,6 +43,7 @@ class Template {
         merge_fields = EXCLUDED.merge_fields,
         timeline = EXCLUDED.timeline,
         assets = EXCLUDED.assets,
+        settings = EXCLUDED.settings,
         is_active = EXCLUDED.is_active,
         created_by = EXCLUDED.created_by,
         updated_at = EXCLUDED.updated_at,
@@ -52,7 +54,7 @@ class Template {
       this.id, this.name, this.description, this.category,
       this.thumbnail_url, this.preview_url, this.duration,
       this.resolution, this.frame_rate, JSON.stringify(this.merge_fields),
-      JSON.stringify(this.timeline), JSON.stringify(this.assets),
+      JSON.stringify(this.timeline), JSON.stringify(this.assets), JSON.stringify(this.settings),
       this.is_active, this.created_by, this.created_at,
       this.updated_at, this.version
     ];
@@ -86,6 +88,7 @@ class Template {
           merge_fields: row.merge_fields,
           timeline: row.timeline,
           assets: row.assets,
+          settings: row.settings,
           is_active: row.is_active,
           created_by: row.created_by,
           created_at: row.created_at,
@@ -118,6 +121,7 @@ class Template {
         merge_fields: row.merge_fields,
         timeline: row.timeline,
         assets: row.assets,
+        settings: row.settings,
         is_active: row.is_active,
         created_by: row.created_by,
         created_at: row.created_at,
@@ -148,6 +152,7 @@ class Template {
         merge_fields: row.merge_fields,
         timeline: row.timeline,
         assets: row.assets,
+        settings: row.settings,
         is_active: row.is_active,
         created_by: row.created_by,
         created_at: row.created_at,
@@ -219,6 +224,7 @@ class Template {
       mergeFields: this.merge_fields,
       timeline: this.timeline,
       assets: this.assets,
+      settings: this.settings,
       isActive: this.is_active,
       createdBy: this.created_by,
       createdAt: this.created_at,

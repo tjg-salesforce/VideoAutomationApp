@@ -17,7 +17,7 @@ export const apiEndpoints = {
   health: () => api.get('/health'),
   
   // Templates
-  getTemplates: () => api.get('/api/templates'),
+  getTemplates: (lightweight: boolean = true) => api.get(`/api/templates?lightweight=${lightweight}`),
   getTemplate: (id: string) => api.get(`/api/templates/${id}`),
   createTemplate: (data: any) => api.post('/api/templates', data),
   updateTemplate: (id: string, data: any) => api.put(`/api/templates/${id}`, data),
@@ -31,7 +31,8 @@ export const apiEndpoints = {
   deleteComponent: (id: string) => api.delete(`/api/components/${id}`),
   
   // Projects
-  getProjects: (ownerId: string = 'default-user') => api.get(`/api/projects?ownerId=${ownerId}`),
+  getProjects: (ownerId: string = 'default-user', lightweight: boolean = true) => 
+    api.get(`/api/projects?ownerId=${ownerId}&lightweight=${lightweight}`),
   getProject: (id: string) => api.get(`/api/projects/${id}`),
   createProject: (data: any) => api.post('/api/projects', { ...data, ownerId: 'default-user' }),
   updateProject: (id: string, data: any) => api.put(`/api/projects/${id}`, data),

@@ -14,19 +14,48 @@ router.use((req, res, next) => {
   }
 });
 
-// GET /api/projects - Get all projects for a user
+// GET /api/projects - Get all projects for a user (lightweight list)
 router.get('/', async (req, res) => {
+  const startTime = Date.now();
   try {
-    const { ownerId } = req.query;
+    const { ownerId, lightweight } = req.query;
     const userId = ownerId || 'default-user'; // Default user for MVP
 
-    const projects = await Project.getByOwner(userId);
-    res.json({
-      success: true,
-      data: projects.map(project => project.toJSON())
-    });
+    console.log(`Loading projects for user ${userId} (lightweight: ${lightweight})...`);
+
+    if (lightweight === 'true') {
+      // Lightweight query - only get basic project info, not heavy JSONB fields
+      const { query } = require('../config/postgres');
+      const queryStartTime = Date.now();
+      const result = await query(`
+        SELECT id, name, description, status, created_at, updated_at 
+        FROM projects 
+        WHERE owner_id = $1 
+        ORDER BY updated_at DESC
+      `, [userId]);
+      const queryTime = Date.now() - queryStartTime;
+      
+      const totalTime = Date.now() - startTime;
+      console.log(`Projects loaded: ${result.rows.length} projects in ${queryTime}ms (query) + ${totalTime - queryTime}ms (processing) = ${totalTime}ms total`);
+      
+      res.json({
+        success: true,
+        data: result.rows
+      });
+    } else {
+      // Full query with all data
+      const projects = await Project.getByOwner(userId);
+      const totalTime = Date.now() - startTime;
+      console.log(`Full projects loaded: ${projects.length} projects in ${totalTime}ms`);
+      
+      res.json({
+        success: true,
+        data: projects.map(project => project.toJSON())
+      });
+    }
   } catch (error) {
-    console.error('Error getting projects:', error);
+    const totalTime = Date.now() - startTime;
+    console.error(`Error getting projects after ${totalTime}ms:`, error);
     res.status(500).json({ 
       success: false,
       error: 'Failed to get projects' 
@@ -36,23 +65,61 @@ router.get('/', async (req, res) => {
 
 // GET /api/projects/:id - Get a specific project
 router.get('/:id', async (req, res) => {
+  const startTime = Date.now();
   try {
     const { id } = req.params;
-    const project = await Project.getById(id);
+    console.log(`Loading project ${id}...`);
     
-    if (!project) {
+    // Use direct SQL query for better performance with specific columns
+    const { query } = require('../config/postgres');
+    const result = await query(`
+      SELECT 
+        id, name, description, template_id, status, owner_id, locked_by,
+        merge_fields, timeline, settings, render_settings, output_url,
+        created_at, updated_at, last_rendered_at
+      FROM projects 
+      WHERE id = $1
+    `, [id]);
+    
+    const loadTime = Date.now() - startTime;
+    
+    if (result.rows.length === 0) {
+      console.log(`Project ${id} not found (${loadTime}ms)`);
       return res.status(404).json({ 
         success: false,
         error: 'Project not found' 
       });
     }
 
+    const row = result.rows[0];
+    const projectData = {
+      id: row.id,
+      name: row.name,
+      description: row.description,
+      template_id: row.template_id,
+      status: row.status,
+      owner_id: row.owner_id,
+      locked_by: row.locked_by,
+      merge_fields: row.merge_fields,
+      timeline: row.timeline,
+      settings: row.settings,
+      render_settings: row.render_settings,
+      output_url: row.output_url,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      last_rendered_at: row.last_rendered_at
+    };
+    
+    const totalTime = Date.now() - startTime;
+    console.log(`Project ${id} loaded successfully: ${loadTime}ms (query) + ${Date.now() - startTime - loadTime}ms (processing) = ${totalTime}ms total`);
+
     res.json({
       success: true,
-      data: project.toJSON()
+      data: projectData
     });
   } catch (error) {
-    console.error('Error getting project:', error);
+    const totalTime = Date.now() - startTime;
+    console.error(`Error getting project ${req.params.id} after ${totalTime}ms:`, error);
     res.status(500).json({ 
       success: false,
       error: 'Failed to get project' 

@@ -3,16 +3,24 @@
 import { useState, useEffect } from 'react';
 import { apiEndpoints } from '@/lib/api';
 import { Project } from '@/types';
-import { PlusIcon, PlayIcon, PencilIcon, TrashIcon, MagnifyingGlassIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, PlayIcon, PencilIcon, TrashIcon, MagnifyingGlassIcon, DocumentDuplicateIcon } from '@heroicons/react/24/outline';
 import NewProjectModal from '@/components/NewProjectModal';
+import UseTemplateModal from '@/components/UseTemplateModal';
+import DeleteTemplateModal from '@/components/DeleteTemplateModal';
+import Toast from '@/components/Toast';
 
 export default function Home() {
   const [projects, setProjects] = useState<Project[]>([]);
+  const [templates, setTemplates] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
   // Modal states
   const [showNewProjectModal, setShowNewProjectModal] = useState(false);
+  const [showUseTemplateModal, setShowUseTemplateModal] = useState(false);
+  const [showDeleteTemplateModal, setShowDeleteTemplateModal] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState<any>(null);
+  const [templateToDelete, setTemplateToDelete] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<'projects' | 'templates'>('projects');
   const [searchTerm, setSearchTerm] = useState('');
   const [formData, setFormData] = useState({
@@ -20,6 +28,12 @@ export default function Home() {
     description: '',
     template_id: '',
   });
+  
+  // Template usage states
+  const [usingTemplate, setUsingTemplate] = useState<string | null>(null);
+  
+  // Toast state
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
   useEffect(() => {
     loadData();
@@ -28,16 +42,30 @@ export default function Home() {
   const loadData = async () => {
     try {
       setLoading(true);
+      setError(null); // Clear previous errors
       console.log('Loading data from backend...');
       
-      const projectsRes = await apiEndpoints.getProjects();
+      const [projectsRes, templatesRes] = await Promise.all([
+        apiEndpoints.getProjects().catch(err => {
+          console.error('Projects API error:', err);
+          return { data: { data: [] } }; // Return empty array on error
+        }),
+        apiEndpoints.getTemplates(true).catch(err => {
+          console.error('Templates API error:', err);
+          return { data: { data: [] } }; // Return empty array on error
+        })
+      ]);
       
-      console.log('API responses:', { projectsRes });
+      console.log('API responses:', { projectsRes, templatesRes });
       
       setProjects(projectsRes.data.data || []);
+      setTemplates(templatesRes.data.data || []);
     } catch (err) {
       console.error('Detailed error:', err);
       setError(`Failed to load data from backend: ${err.message}`);
+      // Set empty arrays to prevent undefined errors
+      setProjects([]);
+      setTemplates([]);
     } finally {
       setLoading(false);
     }
@@ -45,6 +73,78 @@ export default function Home() {
 
   const handleProjectCreated = () => {
     loadData(); // Refresh the data
+  };
+
+  const handleUseTemplate = (template: any) => {
+    setSelectedTemplate(template);
+    setShowUseTemplateModal(true);
+  };
+
+  const handleCreateProjectFromTemplate = async (template: any, projectData: { name: string; description: string }) => {
+    setUsingTemplate(template.id);
+    try {
+      // Get the full template data to copy timeline and settings
+      const templateResponse = await apiEndpoints.getTemplate(template.id);
+      const fullTemplate = templateResponse.data.data;
+      
+      // Create project with template data copied over
+      const newProjectData = {
+        name: projectData.name,
+        description: projectData.description,
+        template_id: template.id,
+        // Copy timeline and settings from template
+        timeline: fullTemplate.timeline || [],
+        settings: fullTemplate.settings || {
+          resolution: '1920x1080',
+          frame_rate: 30,
+          duration: 0
+        },
+        // Copy any additional template data
+        merge_fields: fullTemplate.merge_fields || {},
+        render_settings: {
+          quality: 'high',
+          format: 'mp4',
+          codec: 'h264'
+        }
+      };
+
+      console.log('Creating project from template with data:', newProjectData);
+
+      const response = await apiEndpoints.createProject(newProjectData);
+      const newProject = response.data.data;
+      
+      // Refresh the data
+      loadData();
+      
+      // Navigate to the new project
+      window.location.href = `/projects/${newProject.id}/edit`;
+    } catch (err: any) {
+      console.error('Error creating project from template:', err);
+      setError(err.response?.data?.error || 'Failed to create project from template');
+    } finally {
+      setUsingTemplate(null);
+    }
+  };
+
+  const handleDeleteTemplate = (template: any) => {
+    setTemplateToDelete(template);
+    setShowDeleteTemplateModal(true);
+  };
+
+  const confirmDeleteTemplate = async () => {
+    if (!templateToDelete) return;
+
+    try {
+      await apiEndpoints.deleteTemplate(templateToDelete.id);
+      setToast({ message: 'Template deleted successfully!', type: 'success' });
+      loadData(); // Refresh the data
+    } catch (err: any) {
+      console.error('Error deleting template:', err);
+      setError(err.response?.data?.error || 'Failed to delete template');
+    } finally {
+      setShowDeleteTemplateModal(false);
+      setTemplateToDelete(null);
+    }
   };
 
   // Filter projects based on search term
@@ -152,7 +252,7 @@ export default function Home() {
                       : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                   }`}
                 >
-                  Video Templates (2)
+                  Video Templates ({templates.length})
                 </button>
               </nav>
             </div>
@@ -223,7 +323,7 @@ export default function Home() {
                     </div>
                     <div className="flex items-center space-x-2">
                       <div className="text-sm text-gray-500">
-                        {new Date(project.created_at).toLocaleDateString()}
+                        {project.created_at ? new Date(project.created_at).toLocaleDateString() : 'Unknown'}
                       </div>
                       <div className="flex items-center space-x-1">
                         <button
@@ -251,36 +351,48 @@ export default function Home() {
             {/* Video Templates Tab Content */}
             <div className={activeTab === 'templates' ? 'block' : 'hidden'}>
               <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">Video Templates</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Roadmap Placeholder Items */}
-                <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <h4 className="text-sm font-medium text-gray-500">Template 1</h4>
-                      <p className="text-sm text-gray-400 mt-1">Templates are roadmap items comprised of components and media files for easy re-use of popular videos</p>
-                      <div className="mt-2 flex items-center justify-between">
-                        <span className="text-xs text-gray-400">Roadmap</span>
-                        <span className="text-xs text-gray-400">Coming Soon</span>
+              {templates.length === 0 ? (
+                <div className="text-center py-8">
+                  <PlayIcon className="mx-auto h-12 w-12 text-gray-400" />
+                  <h3 className="mt-2 text-sm font-medium text-gray-900">No templates yet</h3>
+                  <p className="mt-1 text-sm text-gray-500">Create a project and save it as a template to get started.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {templates.map((template) => (
+                    <div key={template.id} className="border border-gray-200 rounded-lg p-4 bg-white hover:bg-gray-50">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <h4 className="text-sm font-medium text-gray-900">{template.name}</h4>
+                          <p className="text-sm text-gray-500 mt-1">{template.description || 'No description'}</p>
+                          <div className="mt-2 flex items-center justify-between">
+                            <span className="text-xs text-gray-400">Template</span>
+                            <span className="text-xs text-gray-400">
+                              {template.created_at ? new Date(template.created_at).toLocaleDateString() : 'Unknown'}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="ml-4 flex flex-col space-y-2">
+                          <button
+                            onClick={() => handleUseTemplate(template)}
+                            className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                          >
+                            <DocumentDuplicateIcon className="h-4 w-4 mr-1" />
+                            Use Template
+                          </button>
+                          <button
+                            onClick={() => handleDeleteTemplate(template)}
+                            className="inline-flex items-center px-3 py-2 border border-red-300 text-sm leading-4 font-medium rounded-md text-red-700 bg-white hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+                          >
+                            <TrashIcon className="h-4 w-4 mr-1" />
+                            Delete
+                          </button>
+                        </div>
                       </div>
                     </div>
-                    <div className="h-4 w-4 bg-gray-300 rounded ml-2" />
-                  </div>
+                  ))}
                 </div>
-                
-                <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <h4 className="text-sm font-medium text-gray-500">Template 2</h4>
-                      <p className="text-sm text-gray-400 mt-1">Templates are roadmap items comprised of components and media files for easy re-use of popular videos</p>
-                      <div className="mt-2 flex items-center justify-between">
-                        <span className="text-xs text-gray-400">Roadmap</span>
-                        <span className="text-xs text-gray-400">Coming Soon</span>
-                      </div>
-                    </div>
-                    <div className="h-4 w-4 bg-gray-300 rounded ml-2" />
-                  </div>
-                </div>
-              </div>
+              )}
             </div>
           </div>
         </div>
@@ -294,7 +406,35 @@ export default function Home() {
         onProjectCreated={handleProjectCreated}
         templates={[]}
       />
+      
+      <UseTemplateModal
+        template={selectedTemplate}
+        isOpen={showUseTemplateModal}
+        onClose={() => {
+          setShowUseTemplateModal(false);
+          setSelectedTemplate(null);
+        }}
+        onUseTemplate={handleCreateProjectFromTemplate}
+      />
+      
+      <DeleteTemplateModal
+        template={templateToDelete}
+        isOpen={showDeleteTemplateModal}
+        onClose={() => {
+          setShowDeleteTemplateModal(false);
+          setTemplateToDelete(null);
+        }}
+        onConfirm={confirmDeleteTemplate}
+      />
 
+      {/* Toast Notification */}
+      {toast && (
+        <Toast
+          message={toast.message}
+          type={toast.type}
+          onClose={() => setToast(null)}
+        />
+      )}
 
     </div>
   );
