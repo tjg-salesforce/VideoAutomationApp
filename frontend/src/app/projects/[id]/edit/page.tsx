@@ -41,6 +41,7 @@ function VideoTimelineControl({
   freezeFrameTime?: number;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const [shouldPreload, setShouldPreload] = useState(false);
 
   // Function to update video time
   const updateVideoTime = useCallback(() => {
@@ -100,6 +101,24 @@ function VideoTimelineControl({
     }
   }, [isPlaying]);
 
+  // Smart preloading: only preload videos that are about to be visible (within 2 seconds)
+  useEffect(() => {
+    const timelineEndTime = startTime + duration;
+    const timeUntilStart = startTime - currentTime;
+    const isActive = currentTime >= startTime && currentTime <= timelineEndTime;
+    
+    // Preload if:
+    // 1. Video is currently active, OR
+    // 2. Video starts within 2 seconds (for smooth playback)
+    if (isActive || (timeUntilStart > 0 && timeUntilStart <= 2)) {
+      setShouldPreload(true);
+    } else if (currentTime > timelineEndTime + 5) {
+      // Unload videos that are more than 5 seconds past (to free memory)
+      // But keep shouldPreload true once set to avoid reloading
+      // This is a balance between memory and performance
+    }
+  }, [currentTime, startTime, duration]);
+
   // Handle video load event
   useEffect(() => {
     const video = videoRef.current;
@@ -124,6 +143,12 @@ function VideoTimelineControl({
       className={className}
       muted
       loop
+      preload={shouldPreload ? "auto" : "metadata"}
+      playsInline
+      onLoadedMetadata={() => {
+        // Metadata loaded - video is ready for playback
+        updateVideoTime();
+      }}
     />
   );
 }

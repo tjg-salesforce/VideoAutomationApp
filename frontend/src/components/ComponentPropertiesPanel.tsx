@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { ComponentProperty, ComponentSchema } from '@/lib/componentSchemas';
+import { generateConversation, GeminiMessage } from '@/lib/geminiApi';
 
 interface ComponentPropertiesPanelProps {
   schema: ComponentSchema;
@@ -207,6 +208,9 @@ const ComponentPropertiesPanel: React.FC<ComponentPropertiesPanelProps> = ({
         );
 
       case 'array':
+        // Special handling for iPhone SMS messages with AI generation
+        const isIPhoneSMSMessages = schema.type === 'iphone_sms' && property.id === 'messages';
+        
         return (
           <div key={property.id} className="mb-4">
             <div className="mb-2">
@@ -218,6 +222,19 @@ const ComponentPropertiesPanel: React.FC<ComponentPropertiesPanelProps> = ({
                 <p className="text-xs text-gray-500 mt-1">{property.description}</p>
               )}
             </div>
+            
+            {/* AI Generation Section for iPhone SMS */}
+            {isIPhoneSMSMessages && (
+              <AIConversationGenerator
+                customerName={properties.customerName || 'Customer'}
+                agentName={properties.agentName || 'Agent'}
+                existingMessages={value || []}
+                onGenerate={(messages) => {
+                  // Always replace existing messages with newly generated ones
+                  onPropertyChange(property.id, messages);
+                }}
+              />
+            )}
             
             <div className="space-y-3">
               {(value || []).map((item: any, index: number) => (
@@ -347,6 +364,165 @@ const ComponentPropertiesPanel: React.FC<ComponentPropertiesPanelProps> = ({
       <div className="space-y-3">
         {schema.properties.map(renderProperty)}
       </div>
+    </div>
+  );
+};
+
+// AI Conversation Generator Component
+interface AIConversationGeneratorProps {
+  customerName: string;
+  agentName: string;
+  existingMessages: any[];
+  onGenerate: (messages: any[]) => void;
+}
+
+const AIConversationGenerator: React.FC<AIConversationGeneratorProps> = ({
+  customerName,
+  agentName,
+  existingMessages,
+  onGenerate
+}) => {
+  const [prompt, setPrompt] = useState('');
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [apiKey, setApiKey] = useState('');
+
+  // Load API key from environment or localStorage
+  useEffect(() => {
+    const storedKey = localStorage.getItem('gemini_api_key');
+    const envKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+    if (envKey) {
+      setApiKey(envKey);
+    } else if (storedKey) {
+      setApiKey(storedKey);
+    }
+  }, []);
+
+  const handleGenerate = async () => {
+    if (!prompt.trim()) {
+      setError('Please enter a prompt for the conversation');
+      return;
+    }
+
+    if (!apiKey) {
+      setError('Please provide a Gemini API key. You can set it in the input below or add NEXT_PUBLIC_GEMINI_API_KEY to your environment variables.');
+      return;
+    }
+
+    setIsGenerating(true);
+    setError(null);
+
+    try {
+      const messages = await generateConversation({
+        prompt: prompt.trim(),
+        customerName,
+        agentName,
+        apiKey,
+        existingMessages: existingMessages.map((msg: any) => ({
+          sender: msg.sender,
+          text: msg.text
+        }))
+      });
+
+      // Convert Gemini messages to component format with unique IDs
+      const formattedMessages = messages.map((msg, index) => ({
+        id: `msg_ai_${Date.now()}_${index}`,
+        sender: msg.sender,
+        text: msg.text,
+        timestamp: msg.timestamp
+      }));
+
+      onGenerate(formattedMessages);
+      setPrompt(''); // Clear prompt after successful generation
+    } catch (err: any) {
+      console.error('Error generating conversation:', err);
+      setError(err.message || 'Failed to generate conversation. Please try again.');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  return (
+    <div className="mb-4 p-4 border border-blue-200 rounded-lg bg-blue-50">
+      <div className="mb-3">
+        <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
+          <img 
+            src="/salesforce-agent.png" 
+            alt="Salesforce Agent" 
+            className="w-5 h-5 object-contain"
+            onError={(e) => {
+              // Fallback: hide image and show emoji instead
+              e.currentTarget.style.display = 'none';
+            }}
+          />
+          <span>AI Conversation Generator</span>
+        </label>
+        <p className="text-xs text-gray-600 mb-3">
+          Describe the conversation you want to generate. Messages will automatically alternate between customer and agent.
+        </p>
+        
+        <textarea
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+          placeholder="e.g., Customer asking about product pricing, agent explaining features and closing the sale"
+          rows={3}
+          className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm mb-2"
+          disabled={isGenerating}
+        />
+        
+        {/* API Key Input - Only show if not set in environment */}
+        {!process.env.NEXT_PUBLIC_GEMINI_API_KEY && (
+          <div className="mb-2">
+            <label className="block text-xs font-medium text-gray-600 mb-1">
+              Gemini API Key
+            </label>
+            <input
+              type="password"
+              value={apiKey}
+              onChange={(e) => {
+                setApiKey(e.target.value);
+                // Save to localStorage for convenience
+                if (e.target.value) {
+                  localStorage.setItem('gemini_api_key', e.target.value);
+                } else {
+                  localStorage.removeItem('gemini_api_key');
+                }
+              }}
+              placeholder="Enter your Gemini API key"
+              className="w-full px-2 py-1 border border-gray-300 rounded text-xs"
+              disabled={isGenerating}
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              API key will be saved in browser localStorage
+            </p>
+          </div>
+        )}
+
+        {error && (
+          <div className="mb-2 p-2 bg-red-100 border border-red-300 rounded text-xs text-red-700">
+            {error}
+          </div>
+        )}
+
+        <button
+          onClick={handleGenerate}
+          disabled={isGenerating || !prompt.trim() || (!apiKey && !process.env.NEXT_PUBLIC_GEMINI_API_KEY)}
+          className="w-full px-3 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center"
+        >
+          {isGenerating ? (
+            <>
+              <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              Generating...
+            </>
+          ) : (
+            '✨ Generate Conversation'
+          )}
+        </button>
+      </div>
+      
     </div>
   );
 };
