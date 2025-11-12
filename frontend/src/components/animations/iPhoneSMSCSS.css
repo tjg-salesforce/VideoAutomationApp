@@ -5,7 +5,7 @@
   display: flex;
   justify-content: center;
   align-items: center;
-  background-color: #f0f2f5;
+  background-color: transparent;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
   font-weight: normal;
 }
@@ -170,6 +170,8 @@
   padding: 10px;
   flex-grow: 1;
   overflow-y: auto;
+  overflow-x: hidden;
+  scroll-behavior: smooth;
   gap: 8px;
   min-height: 0; /* Allow flex shrinking */
 }
@@ -319,6 +321,24 @@ p.from-them::after {
   border-radius: 2.5px;
   margin: 8px auto 8px;
 }
+
+/* Message animation - slide in from bottom */
+@keyframes messageSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.message-appearing {
+  animation: messageSlideIn 0.3s ease-out;
+}
+
+/* Ensure messages container scrolls smoothly - merge with existing .imessage */
 
 ::placeholder {
   color: #8e8e93;

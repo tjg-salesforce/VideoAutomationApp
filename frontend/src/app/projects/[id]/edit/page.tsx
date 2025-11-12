@@ -76,14 +76,21 @@ function VideoTimelineControl({
         }
       } else {
         // Normal video playback
-      const videoProgress = (currentTime - startTime) / duration;
-      
+        const videoProgress = Math.min(1, (currentTime - startTime) / duration); // Clamp to 1 to hold last frame
+        
         // Calculate the actual video time based on cropping
         const actualVideoDuration = videoEndTime ? videoEndTime - videoStartTime : video.duration;
         const targetVideoTime = videoStartTime + (videoProgress * actualVideoDuration);
         
-        if (isFinite(targetVideoTime) && targetVideoTime >= 0 && targetVideoTime <= video.duration) {
-          video.currentTime = targetVideoTime;
+        // Ensure we hold the last frame when at the end
+        const clampedVideoTime = Math.min(targetVideoTime, videoStartTime + actualVideoDuration);
+        
+        if (isFinite(clampedVideoTime) && clampedVideoTime >= 0 && clampedVideoTime <= video.duration) {
+          video.currentTime = clampedVideoTime;
+          // Pause the video when at the end to hold the frame (but don't hide it)
+          if (currentTime >= timelineEndTime) {
+            video.pause();
+          }
         }
       }
     }
@@ -1342,32 +1349,63 @@ export default function ProjectEditor() {
         setProject(projectData);
         
         // Restore component properties if they exist
+        const allProperties: { [key: string]: any } = {};
+        
+        // First, load from direct componentProperties
         if (projectData.componentProperties) {
-          setComponentProperties(projectData.componentProperties);
-        } else if (projectData.timeline) {
-          // Extract properties from timeline items if they exist
-          const properties: { [key: string]: any } = {};
+          Object.assign(allProperties, projectData.componentProperties);
+        }
+        
+        // Then, extract from timeline items if they exist
+        if (projectData.timeline) {
           projectData.timeline.forEach((item: any) => {
             if (item.properties && item.component?.id) {
-              properties[item.component.id] = item.properties;
+              allProperties[item.component.id] = item.properties;
             }
           });
-          setComponentProperties(properties);
         }
 
-        // Also restore component properties from timelineLayers
+        // Also restore component properties from timelineLayers (this is the primary source)
         if (projectData.settings?.timelineLayers) {
-          const properties: { [key: string]: any } = {};
           projectData.settings.timelineLayers.forEach((layer: any) => {
             layer.items.forEach((item: any) => {
-              if (item.properties && item.component?.id) {
-                properties[item.component.id] = item.properties;
+              // Check if it's a component item with properties
+              if (item.component?.id && item.properties) {
+                // For iPhone SMS, prioritize messages from timelineLayers (they're more up-to-date)
+                if (item.component?.type === 'iphone_sms' && item.properties.messages && Array.isArray(item.properties.messages) && item.properties.messages.length > 0) {
+                  // Always use timelineLayer messages if they exist and are not empty
+                  allProperties[item.component.id] = {
+                    ...(allProperties[item.component.id] || {}),
+                    ...item.properties,
+                    messages: item.properties.messages // Explicitly set messages from timelineLayer
+                  };
+                  console.log('📱 Found iPhone SMS properties in timelineLayer:', {
+                    componentId: item.component.id,
+                    messageCount: item.properties.messages.length,
+                    messages: item.properties.messages
+                  });
+                } else {
+                  // Merge properties if they already exist (timelineLayers takes precedence)
+                  if (allProperties[item.component.id]) {
+                    allProperties[item.component.id] = {
+                      ...allProperties[item.component.id],
+                      ...item.properties
+                    };
+                  } else {
+                    allProperties[item.component.id] = item.properties;
+                  }
+                }
               }
             });
           });
-          if (Object.keys(properties).length > 0) {
-            setComponentProperties(prev => ({ ...prev, ...properties }));
-          }
+        }
+        
+        // Set all properties at once
+        if (Object.keys(allProperties).length > 0) {
+          console.log('Loading component properties:', Object.keys(allProperties).length, 'components', allProperties);
+          setComponentProperties(allProperties);
+        } else {
+          console.warn('No component properties found in project data');
         }
 
         // Restore media assets, timeline layers, zoom, and media properties from settings if they exist
@@ -1377,6 +1415,7 @@ export default function ProjectEditor() {
           }
           if (projectData.settings.timelineLayers) {
             // Migrate existing media items to have type: 'media' property
+            // IMPORTANT: Preserve all properties when migrating
             const migratedLayers = projectData.settings.timelineLayers.map((layer: any) => ({
               ...layer,
               items: layer.items.map((item: any) => {
@@ -1384,9 +1423,18 @@ export default function ProjectEditor() {
                 if (item.asset && !item.type) {
                   return { ...item, type: 'media' };
                 }
+                // Preserve all properties including component properties
                 return item;
               })
             }));
+            console.log('Setting timelineLayers with', migratedLayers.length, 'layers');
+            migratedLayers.forEach((layer: any) => {
+              layer.items.forEach((item: any) => {
+                if (item.component?.id && item.properties) {
+                  console.log('TimelineLayer item has properties:', item.component.id, 'messages:', item.properties.messages?.length || 0);
+                }
+              });
+            });
             setTimelineLayers(migratedLayers);
           }
           if (projectData.settings.timelineTabs) {
@@ -2167,12 +2215,22 @@ export default function ProjectEditor() {
         }
       }
       
+      // Calculate initial duration based on component type
+      let initialDuration = totalDuration || 10;
+      if (draggedComponent.type === 'iphone_sms') {
+        // For iPhone SMS, use a reasonable default duration that will be updated when messages are added
+        initialDuration = 10; // Start with 10 seconds, will update when messages are generated/added
+      } else if (draggedComponent.type === 'customer_logo_split') {
+        // For Logo Split, match the animation duration (5 seconds)
+        initialDuration = 5;
+      }
+      
       const newItem: TimelineItem = {
         id: `timeline_${Date.now()}`,
         component_id: draggedComponent.id,
           component: draggedComponent,
         start_time: finalStartTime,
-          duration: totalDuration || 10, // Use total video duration instead of component duration
+          duration: initialDuration,
         order: 0 // Will be set by the layer system
         };
 
@@ -2184,7 +2242,30 @@ export default function ProjectEditor() {
           ...prev,
           [draggedComponent.id]: defaultProperties
         }));
+        
+        // If iPhone SMS component, update duration based on initial messages
+        if (draggedComponent.type === 'iphone_sms' && defaultProperties.messages && Array.isArray(defaultProperties.messages) && defaultProperties.messages.length > 0) {
+          import('@/components/animations/iPhoneSMSCSS').then(({ calculateTotalMessageDuration }) => {
+            const calculatedDuration = calculateTotalMessageDuration(defaultProperties.messages);
+            if (calculatedDuration > 0) {
+              // Update the item duration after it's added to timelineLayers
+              setTimeout(() => {
+                setTimelineLayers(prev => prev.map(layer => ({
+                  ...layer,
+                  items: layer.items.map(item => 
+                    item.id === newItem.id
+                      ? { ...item, duration: calculatedDuration }
+                      : item
+                  )
+                })));
+              }, 100);
+            }
+          });
+        }
 
+      // Store the newItem ID for duration update
+      const newItemId = newItem.id;
+      
       // Add to timelineLayers instead of timeline
       setTimelineLayers(prev => {
         const newLayers = [...prev];
@@ -2922,22 +3003,24 @@ export default function ProjectEditor() {
 
   const getCurrentTimelineItem = () => {
     // Find the timeline item that should be playing at current time
-    const currentItem = timeline.find(item => 
-      currentTime >= item.start_time && currentTime < item.start_time + item.duration
-    );
+    // Search through all timelineLayers to find the active component item
+    for (const layer of timelineLayers) {
+      if (!layer.visible) continue;
+      
+      for (const item of layer.items) {
+        // Skip group items and settings-data items
+        if ((item as any).isGroup || item.id === 'settings-data') continue;
+        
+        // Check if this is a component item and if it's active at current time
+        if (isComponentItem(item)) {
+          if (currentTime >= item.start_time && currentTime < item.start_time + item.duration) {
+            return item;
+          }
+        }
+      }
+    }
     
-    // Debug logging
-    console.log('getCurrentTimelineItem - currentTime:', currentTime);
-    console.log('Timeline items:', timeline.map(item => ({
-      id: item.id,
-      type: item.component?.type,
-      start_time: item.start_time,
-      duration: item.duration,
-      isActive: currentTime >= item.start_time && currentTime < item.start_time + item.duration
-    })));
-    console.log('Current item found:', currentItem);
-    
-    return currentItem || null;
+    return null;
   };
 
   // CSS-based logo split animation rendering
@@ -3381,7 +3464,8 @@ Save {isTemplate ? 'Template' : 'Project'}
                     }
                   }
                   
-                  const isActive = currentTime >= mediaItem.start_time && currentTime < mediaItem.start_time + mediaItem.duration;
+                  // Include end time to hold last frame (use <= instead of <)
+                  const isActive = currentTime >= mediaItem.start_time && currentTime <= mediaItem.start_time + mediaItem.duration;
                   if (!isActive) return null;
                   
                   const mediaProps = mediaProperties[mediaItem.id] || {
@@ -3436,16 +3520,19 @@ Save {isTemplate ? 'Template' : 'Project'}
                             className="w-full h-full object-contain rounded-lg"
                           />
                         ) : isComponentItem(mediaItem) ? (
-                          <ComponentRenderer
-                            component={mediaItem.component}
-                            properties={componentProperties[mediaItem.component.id] || {}}
-                            currentTime={Math.min(
-                              currentTime - mediaItem.start_time,
-                              mediaItem.duration
-                            )}
-                            isPlaying={isPlaying}
-                            mode="preview"
-                          />
+                          // Only render component when currentTime is within its time range
+                          // Include end time to hold last frame (use <= instead of <)
+                          // Pass absolute currentTime - CSSAnimationRenderer will calculate relative time
+                          currentTime >= mediaItem.start_time && currentTime <= mediaItem.start_time + mediaItem.duration ? (
+                            <ComponentRenderer
+                              component={mediaItem.component}
+                              properties={componentProperties[mediaItem.component.id] || {}}
+                              currentTime={currentTime}
+                              isPlaying={isPlaying}
+                              mode="preview"
+                              timelineItem={mediaItem}
+                            />
+                          ) : null
                         ) : null}
                       </div>
                     </div>
@@ -3453,22 +3540,8 @@ Save {isTemplate ? 'Template' : 'Project'}
                 });
               })}
               
-              {/* Render components on top */}
-              {getCurrentTimelineItem() ? (
-                <div className="absolute inset-0 w-full h-full" style={{ zIndex: timelineLayers.length + 100 }}>
-                  <ComponentRenderer
-                    component={getCurrentTimelineItem()!.component}
-                    properties={componentProperties[getCurrentTimelineItem()!.component.id] || {}}
-                    currentTime={Math.min(
-                      currentTime - getCurrentTimelineItem()!.start_time,
-                      getCurrentTimelineItem()!.duration
-                    )}
-                    isPlaying={isPlaying && currentTime < getCurrentTimelineItem()!.start_time + getCurrentTimelineItem()!.duration}
-                    mode="preview"
-                    timelineItem={getCurrentTimelineItem()!}
-                  />
-                </div>
-              ) : timelineLayers.length === 0 ? (
+              {/* Empty state when no items */}
+              {timelineLayers.length === 0 ? (
                 <div className="w-full h-full bg-gray-200 rounded-lg flex items-center justify-center">
                   <div className="text-center text-gray-500">
                     <PlayIcon className="h-16 w-16 mx-auto mb-4 text-gray-300" />
@@ -4344,13 +4417,91 @@ Save {isTemplate ? 'Template' : 'Project'}
                       schema={schema}
                       properties={componentProperties[selectedTimelineItem.component.id] || {}}
                       onPropertyChange={(propertyId, value) => {
-                        setComponentProperties(prev => ({
-                          ...prev,
-                          [selectedTimelineItem.component.id]: {
-                            ...prev[selectedTimelineItem.component.id],
-                            [propertyId]: value
+                        console.log('onPropertyChange called:', { propertyId, valueType: Array.isArray(value) ? 'array' : typeof value, valueLength: Array.isArray(value) ? value.length : 'N/A', componentType: selectedTimelineItem.component.type });
+                        
+                        const updatedProperties = {
+                          ...componentProperties[selectedTimelineItem.component.id],
+                          [propertyId]: value
+                        };
+                        
+                        setComponentProperties(prev => {
+                          const updated = {
+                            ...prev,
+                            [selectedTimelineItem.component.id]: updatedProperties
+                          };
+                          
+                          // Auto-update component duration for iPhone SMS when messages change
+                          if (selectedTimelineItem.component.type === 'iphone_sms' && propertyId === 'messages') {
+                            console.log('iPhone SMS messages changed, updating duration...', {
+                              messageCount: Array.isArray(value) ? value.length : 0,
+                              itemId: selectedTimelineItem.id,
+                              componentId: selectedTimelineItem.component.id
+                            });
+                            
+                            // Dynamically import the calculation function
+                            import('@/components/animations/iPhoneSMSCSS').then(({ calculateTotalMessageDuration }) => {
+                              const newDuration = calculateTotalMessageDuration(value || []);
+                              console.log('Calculated new duration:', newDuration, 'for', (value || []).length, 'messages');
+                              
+                              if (newDuration > 0) {
+                                // Update the timeline item duration in timelineLayers
+                                setTimelineLayers(prevLayers => {
+                                  let found = false;
+                                  const updatedLayers = prevLayers.map(layer => {
+                                    const updatedItems = layer.items.map(item => {
+                                      // Try to match by item ID first
+                                      if (item.id === selectedTimelineItem.id) {
+                                        found = true;
+                                        console.log('✅ Found and updating item by ID:', item.id, 'duration:', item.duration, '->', newDuration);
+                                        return { ...item, duration: newDuration };
+                                      }
+                                      // Fallback: try to match by component ID if item ID doesn't match
+                                      if (isComponentItem(item) && item.component?.id === selectedTimelineItem.component.id) {
+                                        found = true;
+                                        console.log('✅ Found and updating item by component ID:', item.id, 'duration:', item.duration, '->', newDuration);
+                                        return { ...item, duration: newDuration };
+                                      }
+                                      return item;
+                                    });
+                                    return { ...layer, items: updatedItems };
+                                  });
+                                  
+                                  if (!found) {
+                                    console.error('❌ Could not find item with id:', selectedTimelineItem.id, 'or component id:', selectedTimelineItem.component.id, 'in timelineLayers');
+                                    console.log('Available items:', prevLayers.flatMap(l => l.items.map(i => ({ id: i.id, componentId: isComponentItem(i) ? i.component?.id : 'N/A' }))));
+                                  }
+                                  
+                                  // Recalculate total duration with updated timeline
+                                  setTimeout(() => {
+                                    const allItems = updatedLayers.flatMap(layer => layer.items);
+                                    const componentItems = allItems.filter(item => isComponentItem(item)) as TimelineItem[];
+                                    console.log('Recalculating total duration with', componentItems.length, 'component items');
+                                    calculateTotalDuration(componentItems);
+                                  }, 0);
+                                  
+                                  return updatedLayers;
+                                });
+                                
+                                // Also update selectedTimelineItem - do this AFTER timelineLayers update
+                                setTimeout(() => {
+                                  setSelectedTimelineItem(prev => {
+                                    if (prev && prev.id === selectedTimelineItem.id) {
+                                      console.log('Updating selectedTimelineItem duration:', prev.duration, '->', newDuration);
+                                      return { ...prev, duration: newDuration };
+                                    }
+                                    return prev;
+                                  });
+                                }, 10);
+                              } else {
+                                console.warn('⚠️ Calculated duration is 0 or negative:', newDuration);
+                              }
+                            }).catch(err => {
+                              console.error('❌ Error importing calculateTotalMessageDuration:', err);
+                            });
                           }
-                        }));
+                          
+                          return updated;
+                        });
                       }}
                     />
                   );
@@ -4707,7 +4858,8 @@ Save {isTemplate ? 'Template' : 'Project'}
                     }
                   }
                   
-                  const isActive = currentTime >= mediaItem.start_time && currentTime < mediaItem.start_time + mediaItem.duration;
+                  // Include end time to hold last frame (use <= instead of <)
+                  const isActive = currentTime >= mediaItem.start_time && currentTime <= mediaItem.start_time + mediaItem.duration;
                   if (!isActive) return null;
                   
                   const mediaProps = mediaProperties[mediaItem.id] || {
@@ -4755,40 +4907,61 @@ Save {isTemplate ? 'Template' : 'Project'}
                             className="w-full h-full object-contain rounded-lg"
                           />
                         ) : isComponentItem(mediaItem) ? (
-                          <ComponentRenderer
-                            component={mediaItem.component}
-                            properties={componentProperties[mediaItem.component.id] || {}}
-                            currentTime={Math.min(
-                              currentTime - mediaItem.start_time,
-                              mediaItem.duration
-                            )}
-                            isPlaying={isPlaying && currentTime < mediaItem.start_time + mediaItem.duration}
-                            mode="preview"
-                            timelineItem={mediaItem}
-                          />
+                          // Only render component when currentTime is within its time range
+                          // Include end time to hold last frame (use <= instead of <)
+                          // Pass absolute currentTime - CSSAnimationRenderer will calculate relative time
+                          currentTime >= mediaItem.start_time && currentTime <= mediaItem.start_time + mediaItem.duration ? (() => {
+                            const componentId = mediaItem.component?.id;
+                            // Try to get properties from componentProperties first, then from item.properties
+                            const props = componentId 
+                              ? (componentProperties[componentId] || (mediaItem as any).properties || {})
+                              : ((mediaItem as any).properties || {});
+                            
+                            // Debug logging for watch mode and iPhone SMS
+                            if (componentId && mediaItem.component?.type === 'iphone_sms') {
+                              const isWatchMode = pathname.includes('/watch');
+                              // Always log in watch mode, or if there are no messages
+                              if (isWatchMode || props.messages?.length === 0) {
+                                console.log(`🔍 ${isWatchMode ? 'Watch' : 'Edit'} mode - iPhone SMS component:`, {
+                                  componentId,
+                                  hasPropertiesInState: !!componentProperties[componentId],
+                                  hasPropertiesInItem: !!(mediaItem as any).properties,
+                                  messageCount: props.messages?.length || 0,
+                                  allComponentIds: Object.keys(componentProperties),
+                                  stateProperties: componentProperties[componentId],
+                                  itemProperties: (mediaItem as any).properties,
+                                  finalProps: props,
+                                  fullMediaItem: mediaItem
+                                });
+                                if (props.messages?.length === 0) {
+                                  console.error('❌ NO MESSAGES FOUND!', {
+                                    componentId,
+                                    componentPropertiesKeys: Object.keys(componentProperties),
+                                    mediaItemKeys: Object.keys(mediaItem),
+                                    hasComponentProperties: !!componentProperties[componentId],
+                                    hasMediaItemProperties: !!(mediaItem as any).properties
+                                  });
+                                }
+                              }
+                            }
+                            
+                            return (
+                              <ComponentRenderer
+                                component={mediaItem.component}
+                                properties={props}
+                                currentTime={currentTime}
+                                isPlaying={isPlaying}
+                                mode="preview"
+                                timelineItem={mediaItem}
+                              />
+                            );
+                          })() : null
                         ) : null}
                       </div>
                     </div>
                   );
                 });
               })}
-              
-              {/* Render components on top */}
-              {getCurrentTimelineItem() ? (
-                <div className="absolute inset-0 w-full h-full" style={{ zIndex: timelineLayers.length + 100 }}>
-                  <ComponentRenderer
-                    component={getCurrentTimelineItem()!.component}
-                    properties={componentProperties[getCurrentTimelineItem()!.component.id] || {}}
-                    currentTime={Math.min(
-                      currentTime - getCurrentTimelineItem()!.start_time,
-                      getCurrentTimelineItem()!.duration
-                    )}
-                    isPlaying={isPlaying && currentTime < getCurrentTimelineItem()!.start_time + getCurrentTimelineItem()!.duration}
-                    mode="preview"
-                    timelineItem={getCurrentTimelineItem()!}
-                  />
-                </div>
-              ) : null}
             </div>
           </div>
         </div>

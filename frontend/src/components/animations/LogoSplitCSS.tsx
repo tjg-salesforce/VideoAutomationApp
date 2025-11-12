@@ -29,7 +29,10 @@ export default function LogoSplitCSS({
   const salesforceLogoRef = useRef<HTMLDivElement>(null);
 
   // Calculate animation progress based on time
-  const progress = Math.min(1, currentTime / duration);
+  // Animation is designed for a 5-second timeline
+  // This ensures the animation always runs at the correct speed regardless of component duration
+  const ANIMATION_DURATION = 5; // Fixed 5-second animation timeline
+  const progress = Math.min(1, currentTime / ANIMATION_DURATION);
   
   // Customer background animation completes in first 0.7s (14% of 5s timeline) - much slower growth
   const customerBgPhase = Math.min(1, progress * 3.57);

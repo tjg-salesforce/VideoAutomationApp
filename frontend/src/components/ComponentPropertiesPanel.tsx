@@ -230,6 +230,7 @@ const ComponentPropertiesPanel: React.FC<ComponentPropertiesPanelProps> = ({
                 agentName={properties.agentName || 'Agent'}
                 existingMessages={value || []}
                 onGenerate={(messages) => {
+                  console.log('ComponentPropertiesPanel: onGenerate called with', messages.length, 'messages');
                   // Always replace existing messages with newly generated ones
                   onPropertyChange(property.id, messages);
                 }}
@@ -431,6 +432,11 @@ const AIConversationGenerator: React.FC<AIConversationGeneratorProps> = ({
         text: msg.text,
         timestamp: msg.timestamp
       }));
+
+      console.log('AIConversationGenerator: Generated messages:', {
+        count: formattedMessages.length,
+        messages: formattedMessages.map(m => ({ sender: m.sender, text: m.text.substring(0, 30) }))
+      });
 
       onGenerate(formattedMessages);
       setPrompt(''); // Clear prompt after successful generation

@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react';
 import LogoSplitCSS from '../animations/LogoSplitCSS';
-import iPhoneSMSCSS from '../animations/iPhoneSMSCSS';
+import { iPhoneSMSCSSComponent as SMSConversation } from '../animations/iPhoneSMSCSS';
 import iPhoneSMS from '../animations/iPhoneSMSSimple';
 import SimplePhone from '../animations/SimplePhone';
 import TestComponent from '../animations/TestComponent';
@@ -27,11 +27,18 @@ export default function CSSAnimationRenderer({
   const containerRef = useRef<HTMLDivElement>(null);
 
   if (component.type === 'customer_logo_split') {
+    // Calculate relative time within the component's duration
+    // currentTime is the absolute timeline time
+    // componentStartTime is when this component starts on the timeline
+    const componentStartTime = timelineItem?.start_time || 0;
+    const componentDuration = timelineItem?.duration || 5;
+    const relativeTime = Math.max(0, Math.min(currentTime - componentStartTime, componentDuration));
+    
     return (
       <div ref={containerRef} className="w-full h-full">
         <LogoSplitCSS
-          currentTime={currentTime}
-          duration={5} // 5 seconds
+          currentTime={relativeTime}
+          duration={componentDuration}
           isPlaying={isPlaying}
           backgroundColor={properties.backgroundColor || '#fca5a5'}
           customerLogo={properties.customerLogo?.data || 'Customer Logo'}
@@ -44,31 +51,60 @@ export default function CSSAnimationRenderer({
   }
 
   if (component.type === 'iphone_sms') {
-    console.log('CSSAnimationRenderer: Rendering iPhone SMS component', {
-      component,
-      properties,
-      currentTime,
-      isPlaying,
-      timelineItem,
-      componentStartTime: timelineItem?.start_time,
-      componentDuration: timelineItem?.duration,
-      shouldBeVisible: timelineItem ? currentTime >= timelineItem.start_time && currentTime < timelineItem.start_time + timelineItem.duration : false
-    });
+    // Calculate relative time within the component's duration
+    // currentTime is the absolute timeline time
+    // componentStartTime is when this component starts on the timeline
+    // relativeTime should be 0 when component starts, and increase from there
+    const componentStartTime = timelineItem?.start_time || 0;
+    const componentDuration = timelineItem?.duration || 10;
+    const relativeTime = Math.max(0, currentTime - componentStartTime);
+    
+    // Debug logging (only when relativeTime changes significantly)
+    if (Math.floor(relativeTime) !== Math.floor((window as any).lastLoggedRelativeTime || -1)) {
+      (window as any).lastLoggedRelativeTime = relativeTime;
+      const debugInfo = {
+        currentTime: currentTime.toFixed(2),
+        componentStartTime: componentStartTime.toFixed(2),
+        componentDuration: componentDuration.toFixed(2),
+        relativeTime: relativeTime.toFixed(2),
+        messageCount: (properties.messages || []).length,
+        componentId: component.id,
+        hasProperties: !!properties && Object.keys(properties).length > 0,
+        propertiesKeys: properties ? Object.keys(properties) : [],
+        propertiesMessages: properties?.messages,
+        timelineItemProperties: timelineItem?.properties,
+        fullProperties: properties,
+        fullTimelineItem: timelineItem
+      };
+      console.log('iPhone SMS render:', debugInfo);
+      // Also log separately for easier reading
+      if ((properties.messages || []).length === 0) {
+        console.warn('⚠️ iPhone SMS has NO MESSAGES!', {
+          componentId: component.id,
+          propertiesKeys: properties ? Object.keys(properties) : [],
+          hasTimelineItemProperties: !!timelineItem?.properties,
+          timelineItemPropertiesKeys: timelineItem?.properties ? Object.keys(timelineItem.properties) : []
+        });
+      }
+    }
     
     try {
-      console.log('About to render iPhone SMS with props:', {
-        customerName: properties.customerName || 'Customer',
-        agentName: properties.agentName || 'Agent',
-        messages: properties.messages || []
-      });
+      // Ensure messages is an array - try multiple sources
+      let messages = Array.isArray(properties.messages) ? properties.messages : [];
+      
+      // Fallback: check timelineItem.properties if properties.messages is empty
+      if (messages.length === 0 && timelineItem?.properties?.messages) {
+        messages = Array.isArray(timelineItem.properties.messages) ? timelineItem.properties.messages : [];
+        console.log('Using timelineItem.properties.messages:', messages.length, 'messages');
+      }
       
       return (
         <div ref={containerRef} className="w-full h-full">
-          <SimplePhone
+          <SMSConversation
             customerName={properties.customerName || 'Customer'}
             agentName={properties.agentName || 'Agent'}
-            messages={properties.messages || []}
-            scale={properties.scale || 0.8}
+            messages={messages}
+            currentTime={relativeTime}
           />
         </div>
       );
@@ -76,7 +112,7 @@ export default function CSSAnimationRenderer({
       console.error('Error rendering iPhone SMS component:', error);
       return (
         <div ref={containerRef} className="w-full h-full bg-red-200 flex items-center justify-center">
-          <p className="text-red-600">Error rendering iPhone SMS component</p>
+          <p className="text-red-600">Error rendering iPhone SMS component: {error instanceof Error ? error.message : 'Unknown error'}</p>
         </div>
       );
     }
