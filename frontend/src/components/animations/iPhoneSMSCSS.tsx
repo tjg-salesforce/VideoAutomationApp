@@ -144,6 +144,39 @@ const SMSConversation: React.FC<iPhoneSMSCSSProps> = ({
     return visible;
   }, [messageTimings, currentTime, messages.length]);
 
+  // Calculate if we should show typing bubble (for agent messages only)
+  const showTypingBubble = React.useMemo(() => {
+    if (messageTimings.length === 0) return false;
+    
+    // Find the next message that hasn't appeared yet
+    const nextMessage = messageTimings.find(timing => currentTime < timing.startTime);
+    
+    if (!nextMessage) return false;
+    
+    // Only show typing bubble for agent messages
+    if (nextMessage.message.sender !== 'agent') return false;
+    
+    // Show typing bubble 1.5 seconds before the message appears
+    // Clamp to 0 minimum to handle first message
+    const typingBubbleStartTime = Math.max(0, nextMessage.startTime - 1.5);
+    
+    const shouldShow = currentTime >= typingBubbleStartTime && currentTime < nextMessage.startTime;
+    
+    // Debug logging
+    if (shouldShow && Math.floor(currentTime) !== Math.floor((window as any).lastTypingLogTime || -1)) {
+      (window as any).lastTypingLogTime = currentTime;
+      console.log('💬 Typing bubble should show:', {
+        currentTime: currentTime.toFixed(2),
+        nextMessageStart: nextMessage.startTime.toFixed(2),
+        typingBubbleStart: typingBubbleStartTime.toFixed(2),
+        nextMessageSender: nextMessage.message.sender,
+        nextMessageText: nextMessage.message.text.substring(0, 30)
+      });
+    }
+    
+    return shouldShow;
+  }, [messageTimings, currentTime]);
+
   // Calculate total duration for all messages
   const totalDuration = React.useMemo(() => {
     if (messageTimings.length === 0) return 0;
@@ -151,11 +184,11 @@ const SMSConversation: React.FC<iPhoneSMSCSSProps> = ({
   }, [messageTimings]);
 
   useEffect(() => {
-    // Scroll to bottom when new messages appear
-    if (messagesContainerRef.current && visibleMessages.length > 0) {
+    // Scroll to bottom when new messages appear or typing bubble shows
+    if (messagesContainerRef.current && (visibleMessages.length > 0 || showTypingBubble)) {
       messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
     }
-  }, [visibleMessages.length]);
+  }, [visibleMessages.length, showTypingBubble]);
 
   const formatTime = (timestamp?: string) => {
     if (!timestamp) return '';
@@ -240,40 +273,65 @@ const SMSConversation: React.FC<iPhoneSMSCSSProps> = ({
                 </div>
               </div>
             ) : visibleMessages.length === 0 ? (
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                height: '100%',
-                color: '#8e8e93',
-                fontSize: '14px',
-                textAlign: 'center',
-                padding: '20px'
-              }}>
-                <div>
-                  <p style={{ margin: '0 0 8px 0', fontWeight: '500' }}>Waiting for messages...</p>
-                  <p style={{ margin: '0', fontSize: '12px' }}>Current time: {currentTime.toFixed(2)}s</p>
-                  <p style={{ margin: '4px 0 0', fontSize: '12px' }}>Total messages: {messages.length}</p>
-                </div>
-              </div>
+              <>
+                {/* Show typing bubble even when no messages are visible yet */}
+                {showTypingBubble ? (
+                  <div className="typing-bubble from-them">
+                    <div className="typing-dots">
+                      <span></span>
+                      <span></span>
+                      <span></span>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    height: '100%',
+                    color: '#8e8e93',
+                    fontSize: '14px',
+                    textAlign: 'center',
+                    padding: '20px'
+                  }}>
+                    <div>
+                      <p style={{ margin: '0 0 8px 0', fontWeight: '500' }}>Waiting for messages...</p>
+                      <p style={{ margin: '0', fontSize: '12px' }}>Current time: {currentTime.toFixed(2)}s</p>
+                      <p style={{ margin: '4px 0 0', fontSize: '12px' }}>Total messages: {messages.length}</p>
+                    </div>
+                  </div>
+                )}
+              </>
             ) : (
-              visibleMessages.map((timing, index) => {
-                const isNewlyAppearing = index === visibleMessages.length - 1 && 
-                  currentTime >= timing.startTime && 
-                  currentTime < timing.startTime + 0.3; // Animation duration
-                
-                return (
-                  <p
-                    key={timing.message.id}
-                    className={`${timing.message.sender === 'customer' ? 'from-me' : 'from-them'} ${isNewlyAppearing ? 'message-appearing' : ''}`}
-                    style={{
-                      animation: isNewlyAppearing ? 'messageSlideIn 0.3s ease-out' : undefined
-                    }}
-                  >
-                    {timing.message.text}
-                  </p>
-                );
-              })
+              <>
+                {visibleMessages.map((timing, index) => {
+                  const isNewlyAppearing = index === visibleMessages.length - 1 && 
+                    currentTime >= timing.startTime && 
+                    currentTime < timing.startTime + 0.3; // Animation duration
+                  
+                  return (
+                    <p
+                      key={timing.message.id}
+                      className={`${timing.message.sender === 'customer' ? 'from-me' : 'from-them'} ${isNewlyAppearing ? 'message-appearing' : ''}`}
+                      style={{
+                        animation: isNewlyAppearing ? 'messageSlideIn 0.3s ease-out' : undefined
+                      }}
+                    >
+                      {timing.message.text}
+                    </p>
+                  );
+                })}
+                {/* Typing bubble for agent messages */}
+                {showTypingBubble && (
+                  <div className="typing-bubble from-them">
+                    <div className="typing-dots">
+                      <span></span>
+                      <span></span>
+                      <span></span>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </div>
 
