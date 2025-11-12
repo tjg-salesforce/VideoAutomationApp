@@ -32,7 +32,25 @@ export default function CSSAnimationRenderer({
     // componentStartTime is when this component starts on the timeline
     const componentStartTime = timelineItem?.start_time || 0;
     const componentDuration = timelineItem?.duration || 5;
-    const relativeTime = Math.max(0, Math.min(currentTime - componentStartTime, componentDuration));
+    // If component has been split, use componentStartTime/componentEndTime to clamp
+    const componentAnimationStart = (timelineItem as any)?.componentStartTime ?? 0;
+    const componentAnimationEnd = (timelineItem as any)?.componentEndTime ?? componentDuration;
+    // Calculate relative time within the component's animation timeline
+    let relativeTime = Math.max(0, currentTime - componentStartTime);
+    // Clamp to split boundaries if they exist
+    if ((timelineItem as any)?.componentStartTime !== undefined || (timelineItem as any)?.componentEndTime !== undefined) {
+      // Component has been split - adjust relativeTime to account for the split
+      relativeTime = Math.min(relativeTime, componentAnimationEnd - componentAnimationStart);
+      relativeTime = Math.max(relativeTime, 0) + componentAnimationStart;
+    } else {
+      // Normal case: clamp to component duration
+      relativeTime = Math.min(relativeTime, componentDuration);
+    }
+    
+    // Handle freeze-frame (Option+extend)
+    if ((timelineItem as any)?.freezeFrame && (timelineItem as any)?.freezeFrameTime !== undefined) {
+      relativeTime = (timelineItem as any).freezeFrameTime;
+    }
     
     return (
       <div ref={containerRef} className="w-full h-full">
@@ -57,7 +75,22 @@ export default function CSSAnimationRenderer({
     // relativeTime should be 0 when component starts, and increase from there
     const componentStartTime = timelineItem?.start_time || 0;
     const componentDuration = timelineItem?.duration || 10;
-    const relativeTime = Math.max(0, currentTime - componentStartTime);
+    // If component has been split, use componentStartTime/componentEndTime to clamp
+    const componentAnimationStart = (timelineItem as any)?.componentStartTime ?? 0;
+    const componentAnimationEnd = (timelineItem as any)?.componentEndTime ?? componentDuration;
+    // Calculate relative time within the component's animation timeline
+    let relativeTime = Math.max(0, currentTime - componentStartTime);
+    // Clamp to split boundaries if they exist
+    if ((timelineItem as any)?.componentStartTime !== undefined || (timelineItem as any)?.componentEndTime !== undefined) {
+      // Component has been split - adjust relativeTime to account for the split
+      relativeTime = Math.min(relativeTime, componentAnimationEnd - componentAnimationStart);
+      relativeTime = Math.max(relativeTime, 0) + componentAnimationStart;
+    }
+    
+    // Handle freeze-frame (Option+extend)
+    if ((timelineItem as any)?.freezeFrame && (timelineItem as any)?.freezeFrameTime !== undefined) {
+      relativeTime = (timelineItem as any).freezeFrameTime;
+    }
     
     // Debug logging (only when relativeTime changes significantly)
     if (Math.floor(relativeTime) !== Math.floor((window as any).lastLoggedRelativeTime || -1)) {

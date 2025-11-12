@@ -529,6 +529,11 @@ export default function ProjectEditor() {
               ...(isMediaItem(item) && item.asset?.type === 'video' ? {
                 videoStartTime: 0, // First part starts from beginning of video
                 videoEndTime: timeIntoItem // First part ends at the split point
+              } : {}),
+              // For component items, add component time tracking (similar to video cropping)
+              ...(isComponentItem(item) ? {
+                componentStartTime: 0, // First part starts from beginning of component animation
+                componentEndTime: timeIntoItem // First part ends at the split point
               } : {})
             };
             
@@ -541,6 +546,11 @@ export default function ProjectEditor() {
               ...(isMediaItem(item) && item.asset?.type === 'video' ? {
                 videoStartTime: timeIntoItem, // Second part starts from split point
                 videoEndTime: item.duration // Second part ends at original end
+              } : {}),
+              // For component items, add component time tracking
+              ...(isComponentItem(item) ? {
+                componentStartTime: timeIntoItem, // Second part starts from split point
+                componentEndTime: item.duration // Second part ends at original end
               } : {})
             };
             
@@ -2013,9 +2023,52 @@ export default function ProjectEditor() {
               items: layer.items.map(mediaItem => {
                 if (mediaItem.id !== item.id) return mediaItem;
                 
-                // For component items, simple resize
+                // For component items, simple resize or freeze-frame
                 if (isComponent) {
-                  return { ...mediaItem, start_time: newStartTime, duration: newDuration };
+                  if (isOptionHeld) {
+                    // Option+extend: freeze at current animation state
+                    const updatedItem = { ...mediaItem, start_time: newStartTime, duration: newDuration };
+                    
+                    if (direction === 'end') {
+                      // Extending end with freeze-frame - freeze at the last visible animation state
+                      const freezeFrameTime = (mediaItem as any).componentEndTime || mediaItem.duration;
+                      return {
+                        ...updatedItem,
+                        freezeFrame: true,
+                        freezeFrameTime: freezeFrameTime,
+                        // Preserve component time tracking for split clips
+                        ...(((mediaItem as any).componentStartTime !== undefined || (mediaItem as any).componentEndTime !== undefined) ? {
+                          componentStartTime: (mediaItem as any).componentStartTime,
+                          componentEndTime: (mediaItem as any).componentEndTime
+                        } : {})
+                      };
+                    } else {
+                      // Extending start with freeze-frame - freeze at the first visible animation state
+                      const freezeFrameTime = (mediaItem as any).componentStartTime || 0;
+                      return {
+                        ...updatedItem,
+                        freezeFrame: true,
+                        freezeFrameTime: freezeFrameTime,
+                        // Preserve component time tracking for split clips
+                        ...(((mediaItem as any).componentStartTime !== undefined || (mediaItem as any).componentEndTime !== undefined) ? {
+                          componentStartTime: (mediaItem as any).componentStartTime,
+                          componentEndTime: (mediaItem as any).componentEndTime
+                        } : {})
+                      };
+                    }
+                  } else {
+                    // Normal resize - preserve component time tracking if it exists
+                    const updatedItem = { ...mediaItem, start_time: newStartTime, duration: newDuration };
+                    // Preserve component time tracking for split clips during normal resize
+                    if ((mediaItem as any).componentStartTime !== undefined || (mediaItem as any).componentEndTime !== undefined) {
+                      return {
+                        ...updatedItem,
+                        componentStartTime: (mediaItem as any).componentStartTime,
+                        componentEndTime: (mediaItem as any).componentEndTime
+                      };
+                    }
+                    return updatedItem;
+                  }
                 }
                 
                 // For video items with Option held, add freeze-frame behavior
@@ -4165,22 +4218,40 @@ Save {isTemplate ? 'Template' : 'Project'}
                         {/* Start resize handle for components */}
                         {!isGroup && isComponentItem(item) && (
                           <div
-                            className="absolute left-0 top-0 w-2 h-full opacity-0 group-hover:opacity-100 cursor-ew-resize transition-opacity bg-orange-500 hover:bg-orange-600"
+                            className={`absolute left-0 top-0 w-2 h-full opacity-0 group-hover:opacity-100 cursor-ew-resize transition-opacity ${
+                              isOptionHeld 
+                                ? 'bg-purple-500 hover:bg-purple-600' 
+                                : 'bg-orange-500 hover:bg-orange-600'
+                            }`}
                             onMouseDown={(e) => handleMediaResize(e, item, layer.id, 'start')}
-                            title="Drag to resize component start"
+                            title={isOptionHeld ? "Hold Option + drag for freeze-frame" : "Drag to resize component start"}
                           >
                             <div className="absolute left-0 top-1/2 transform -translate-y-1/2 w-1 h-4 bg-white rounded-sm opacity-50" />
+                            {isOptionHeld && (
+                              <div className="absolute left-0 top-1/2 transform -translate-y-1/2 -translate-x-1 text-xs text-white font-bold">
+                                ⏸️
+                              </div>
+                            )}
                           </div>
                         )}
                         
                         {/* End resize handle for components */}
                         {!isGroup && isComponentItem(item) && (
                           <div
-                            className="absolute right-0 top-0 w-2 h-full opacity-0 group-hover:opacity-100 cursor-ew-resize transition-opacity bg-orange-500 hover:bg-orange-600"
+                            className={`absolute right-0 top-0 w-2 h-full opacity-0 group-hover:opacity-100 cursor-ew-resize transition-opacity ${
+                              isOptionHeld 
+                                ? 'bg-purple-500 hover:bg-purple-600' 
+                                : 'bg-orange-500 hover:bg-orange-600'
+                            }`}
                             onMouseDown={(e) => handleMediaResize(e, item, layer.id, 'end')}
-                            title="Drag to resize component end"
+                            title={isOptionHeld ? "Hold Option + drag for freeze-frame" : "Drag to resize component end"}
                           >
                             <div className="absolute right-0 top-1/2 transform -translate-y-1/2 w-1 h-4 bg-white rounded-sm opacity-50" />
+                            {isOptionHeld && (
+                              <div className="absolute right-0 top-1/2 transform -translate-y-1/2 translate-x-1 text-xs text-white font-bold">
+                                ⏸️
+                              </div>
+                            )}
                           </div>
                         )}
 
