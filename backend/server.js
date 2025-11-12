@@ -31,6 +31,7 @@ app.use(cors({
     // Production frontend URLs (Vercel)
     'https://frontend-bjg9zww8k-tjgs-projects-3c81ae94.vercel.app',
     'https://frontend-pkz1wz57x-tjgs-projects-3c81ae94.vercel.app',
+    'https://frontend-5ysjizynl-tjgs-projects-3c81ae94.vercel.app',
     ...(process.env.FRONTEND_URL ? [process.env.FRONTEND_URL] : [])
   ],
   credentials: true,
