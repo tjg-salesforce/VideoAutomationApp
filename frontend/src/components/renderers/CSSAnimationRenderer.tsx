@@ -99,7 +99,23 @@ export default function CSSAnimationRenderer({
       }
       
       return (
-        <div ref={containerRef} className="w-full h-full">
+        <div 
+          ref={containerRef} 
+          className="w-full h-full flex items-center justify-center"
+          style={
+            mode === 'preview' 
+              ? {
+                  transform: 'scale(0.72)',
+                  transformOrigin: 'center center'
+                }
+              : mode === 'fullscreen' || mode === 'video'
+              ? {
+                  transform: 'scale(1.3)',
+                  transformOrigin: 'center center'
+                }
+              : undefined
+          }
+        >
           <SMSConversation
             customerName={properties.customerName || 'Customer'}
             agentName={properties.agentName || 'Agent'}

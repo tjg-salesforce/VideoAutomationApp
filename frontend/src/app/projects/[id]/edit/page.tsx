@@ -5007,7 +5007,7 @@ Save {isTemplate ? 'Template' : 'Project'}
                                 properties={props}
                                 currentTime={currentTime}
                                 isPlaying={isPlaying}
-                                mode="preview"
+                                mode="fullscreen"
                                 timelineItem={mediaItem}
                               />
                             );

@@ -11,7 +11,7 @@ interface ComponentRendererProps {
   };
   currentTime: number;
   isPlaying: boolean;
-  mode?: 'preview' | 'fullscreen';
+  mode?: 'preview' | 'fullscreen' | 'video';
   onPropertyChange?: (property: string, value: any) => void;
   timelineItem?: any; // Timeline item with start_time, duration, etc.
 }
