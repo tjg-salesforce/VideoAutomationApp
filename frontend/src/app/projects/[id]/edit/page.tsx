@@ -1975,6 +1975,7 @@ export default function ProjectEditor() {
     const timePerPixel = totalDuration / timelineRect.width;
     const startTime = item.start_time;
     const startDuration = item.duration;
+    const isComponent = isComponentItem(item);
     
     const handleMouseMove = (moveEvent: MouseEvent) => {
       const deltaX = moveEvent.clientX - startX;
@@ -1993,7 +1994,7 @@ export default function ProjectEditor() {
           const maxDuration = item.asset.duration || startDuration;
           newDuration = Math.max(1, Math.min(maxDuration, startDuration + deltaTime));
       } else {
-          // For images, allow unlimited extension
+          // For images and components, allow unlimited extension
         newDuration = Math.max(1, startDuration + deltaTime);
         }
       } else {
@@ -2011,6 +2012,11 @@ export default function ProjectEditor() {
               ...layer,
               items: layer.items.map(mediaItem => {
                 if (mediaItem.id !== item.id) return mediaItem;
+                
+                // For component items, simple resize
+                if (isComponent) {
+                  return { ...mediaItem, start_time: newStartTime, duration: newDuration };
+                }
                 
                 // For video items with Option held, add freeze-frame behavior
                 if (isOptionHeld && isMediaItem(mediaItem) && mediaItem.asset?.type === 'video') {
@@ -4156,6 +4162,28 @@ Save {isTemplate ? 'Template' : 'Project'}
                       </div>
                         )}
 
+                        {/* Start resize handle for components */}
+                        {!isGroup && isComponentItem(item) && (
+                          <div
+                            className="absolute left-0 top-0 w-2 h-full opacity-0 group-hover:opacity-100 cursor-ew-resize transition-opacity bg-orange-500 hover:bg-orange-600"
+                            onMouseDown={(e) => handleMediaResize(e, item, layer.id, 'start')}
+                            title="Drag to resize component start"
+                          >
+                            <div className="absolute left-0 top-1/2 transform -translate-y-1/2 w-1 h-4 bg-white rounded-sm opacity-50" />
+                          </div>
+                        )}
+                        
+                        {/* End resize handle for components */}
+                        {!isGroup && isComponentItem(item) && (
+                          <div
+                            className="absolute right-0 top-0 w-2 h-full opacity-0 group-hover:opacity-100 cursor-ew-resize transition-opacity bg-orange-500 hover:bg-orange-600"
+                            onMouseDown={(e) => handleMediaResize(e, item, layer.id, 'end')}
+                            title="Drag to resize component end"
+                          >
+                            <div className="absolute right-0 top-1/2 transform -translate-y-1/2 w-1 h-4 bg-white rounded-sm opacity-50" />
+                          </div>
+                        )}
+
                         {/* Group resize handles */}
                         {isGroup && (
                           <>
@@ -4417,7 +4445,14 @@ Save {isTemplate ? 'Template' : 'Project'}
                       schema={schema}
                       properties={componentProperties[selectedTimelineItem.component.id] || {}}
                       onPropertyChange={(propertyId, value) => {
-                        console.log('onPropertyChange called:', { propertyId, valueType: Array.isArray(value) ? 'array' : typeof value, valueLength: Array.isArray(value) ? value.length : 'N/A', componentType: selectedTimelineItem.component.type });
+                        console.log('🔔 onPropertyChange called:', { 
+                          propertyId, 
+                          valueType: Array.isArray(value) ? 'array' : typeof value, 
+                          valueLength: Array.isArray(value) ? value.length : 'N/A', 
+                          componentType: selectedTimelineItem.component.type,
+                          componentId: selectedTimelineItem.component.id,
+                          itemId: selectedTimelineItem.id
+                        });
                         
                         const updatedProperties = {
                           ...componentProperties[selectedTimelineItem.component.id],
@@ -4431,70 +4466,91 @@ Save {isTemplate ? 'Template' : 'Project'}
                           };
                           
                           // Auto-update component duration for iPhone SMS when messages change
-                          if (selectedTimelineItem.component.type === 'iphone_sms' && propertyId === 'messages') {
-                            console.log('iPhone SMS messages changed, updating duration...', {
+                          const isIPhoneSMS = selectedTimelineItem.component.type === 'iphone_sms';
+                          const isMessagesProperty = propertyId === 'messages';
+                          
+                          console.log('🔍 Checking duration update conditions:', {
+                            isIPhoneSMS,
+                            isMessagesProperty,
+                            willUpdate: isIPhoneSMS && isMessagesProperty
+                          });
+                          
+                          if (isIPhoneSMS && isMessagesProperty) {
+                            console.log('📱 iPhone SMS messages changed, updating duration...', {
                               messageCount: Array.isArray(value) ? value.length : 0,
                               itemId: selectedTimelineItem.id,
-                              componentId: selectedTimelineItem.component.id
+                              componentId: selectedTimelineItem.component.id,
+                              currentDuration: selectedTimelineItem.duration
                             });
+                            
+                            // Capture the component ID and item ID for use in async callback
+                            const componentId = selectedTimelineItem.component.id;
+                            const itemId = selectedTimelineItem.id;
                             
                             // Dynamically import the calculation function
                             import('@/components/animations/iPhoneSMSCSS').then(({ calculateTotalMessageDuration }) => {
-                              const newDuration = calculateTotalMessageDuration(value || []);
-                              console.log('Calculated new duration:', newDuration, 'for', (value || []).length, 'messages');
+                              const messages = value || [];
+                              console.log('📋 Messages to calculate duration for:', messages.length, 'messages', messages.map((m: any) => ({ text: m.text?.substring(0, 20), wordCount: m.text?.split(/\s+/).filter((w: string) => w.length > 0).length || 0 })));
                               
-                              if (newDuration > 0) {
-                                // Update the timeline item duration in timelineLayers
-                                setTimelineLayers(prevLayers => {
-                                  let found = false;
-                                  const updatedLayers = prevLayers.map(layer => {
-                                    const updatedItems = layer.items.map(item => {
-                                      // Try to match by item ID first
-                                      if (item.id === selectedTimelineItem.id) {
-                                        found = true;
-                                        console.log('✅ Found and updating item by ID:', item.id, 'duration:', item.duration, '->', newDuration);
-                                        return { ...item, duration: newDuration };
-                                      }
-                                      // Fallback: try to match by component ID if item ID doesn't match
-                                      if (isComponentItem(item) && item.component?.id === selectedTimelineItem.component.id) {
-                                        found = true;
-                                        console.log('✅ Found and updating item by component ID:', item.id, 'duration:', item.duration, '->', newDuration);
-                                        return { ...item, duration: newDuration };
-                                      }
-                                      return item;
-                                    });
-                                    return { ...layer, items: updatedItems };
+                              const newDuration = calculateTotalMessageDuration(messages);
+                              console.log('📊 Calculated new duration:', newDuration, 'seconds for', messages.length, 'messages');
+                              
+                              // Always update duration, even if 0 (for empty messages)
+                              // Use a minimum of 1 second if there are no messages to avoid 0 duration
+                              const finalDuration = newDuration > 0 ? newDuration : 1;
+                              
+                              console.log('🔄 Updating timeline item duration from', selectedTimelineItem.duration, 'to', finalDuration, 'seconds');
+                              
+                              // Update the timeline item duration in timelineLayers
+                              setTimelineLayers(prevLayers => {
+                                let found = false;
+                                const updatedLayers = prevLayers.map(layer => {
+                                  const updatedItems = layer.items.map(item => {
+                                    // Try to match by item ID first
+                                    if (item.id === itemId) {
+                                      found = true;
+                                      console.log('✅ Found and updating item by ID:', item.id, 'duration:', item.duration, '->', finalDuration);
+                                      return { ...item, duration: finalDuration };
+                                    }
+                                    // Fallback: try to match by component ID if item ID doesn't match
+                                    if (isComponentItem(item) && item.component?.id === componentId) {
+                                      found = true;
+                                      console.log('✅ Found and updating item by component ID:', item.id, 'duration:', item.duration, '->', finalDuration);
+                                      return { ...item, duration: finalDuration };
+                                    }
+                                    return item;
                                   });
-                                  
-                                  if (!found) {
-                                    console.error('❌ Could not find item with id:', selectedTimelineItem.id, 'or component id:', selectedTimelineItem.component.id, 'in timelineLayers');
-                                    console.log('Available items:', prevLayers.flatMap(l => l.items.map(i => ({ id: i.id, componentId: isComponentItem(i) ? i.component?.id : 'N/A' }))));
-                                  }
-                                  
-                                  // Recalculate total duration with updated timeline
-                                  setTimeout(() => {
-                                    const allItems = updatedLayers.flatMap(layer => layer.items);
-                                    const componentItems = allItems.filter(item => isComponentItem(item)) as TimelineItem[];
-                                    console.log('Recalculating total duration with', componentItems.length, 'component items');
-                                    calculateTotalDuration(componentItems);
-                                  }, 0);
-                                  
-                                  return updatedLayers;
+                                  return { ...layer, items: updatedItems };
                                 });
                                 
-                                // Also update selectedTimelineItem - do this AFTER timelineLayers update
+                                if (!found) {
+                                  console.error('❌ Could not find item with id:', itemId, 'or component id:', componentId, 'in timelineLayers');
+                                  console.log('Available items:', prevLayers.flatMap(l => l.items.map(i => ({ id: i.id, componentId: isComponentItem(i) ? i.component?.id : 'N/A' }))));
+                                } else {
+                                  console.log('✅ Successfully updated duration in timelineLayers');
+                                }
+                                
+                                // Recalculate total duration with updated timeline
                                 setTimeout(() => {
-                                  setSelectedTimelineItem(prev => {
-                                    if (prev && prev.id === selectedTimelineItem.id) {
-                                      console.log('Updating selectedTimelineItem duration:', prev.duration, '->', newDuration);
-                                      return { ...prev, duration: newDuration };
-                                    }
-                                    return prev;
-                                  });
-                                }, 10);
-                              } else {
-                                console.warn('⚠️ Calculated duration is 0 or negative:', newDuration);
-                              }
+                                  const allItems = updatedLayers.flatMap(layer => layer.items);
+                                  const componentItems = allItems.filter(item => isComponentItem(item)) as TimelineItem[];
+                                  console.log('📐 Recalculating total duration with', componentItems.length, 'component items');
+                                  calculateTotalDuration(componentItems);
+                                }, 0);
+                                
+                                return updatedLayers;
+                              });
+                              
+                              // Also update selectedTimelineItem - do this AFTER timelineLayers update
+                              setTimeout(() => {
+                                setSelectedTimelineItem(prev => {
+                                  if (prev && (prev.id === itemId || (prev.component?.id === componentId))) {
+                                    console.log('✅ Updating selectedTimelineItem duration:', prev.duration, '->', finalDuration);
+                                    return { ...prev, duration: finalDuration };
+                                  }
+                                  return prev;
+                                });
+                              }, 10);
                             }).catch(err => {
                               console.error('❌ Error importing calculateTotalMessageDuration:', err);
                             });

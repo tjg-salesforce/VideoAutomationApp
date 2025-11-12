@@ -16,47 +16,88 @@ export interface iPhoneSMSCSSProps {
 }
 
 /**
+ * Calculate word count for a message text
+ */
+function getWordCount(text: string): number {
+  if (!text || text.trim().length === 0) return 0;
+  // Split by whitespace and filter out empty strings
+  return text.trim().split(/\s+/).filter(word => word.length > 0).length;
+}
+
+/**
+ * Calculate delay for a single message based on word count
+ * Formula: Delay (seconds) = (Word Count × 0.204) + 1.275
+ * This is 15% faster than the original: (Word Count × 0.24) + 1.5
+ * Round to nearest whole second
+ * If word count is 0, delay is 1 second
+ */
+function calculateMessageDelay(text: string): number {
+  const wordCount = getWordCount(text);
+  
+  if (wordCount === 0) {
+    return 1; // 1 second for empty/emoji-only messages
+  }
+  
+  // Calculate delay: (Word Count × 0.204) + 1.275 (15% faster than original)
+  // Original: (Word Count × 0.24) + 1.5
+  // 15% faster: multiply by 0.85 → (Word Count × 0.204) + 1.275
+  const delay = (wordCount * 0.204) + 1.275;
+  
+  // Round to nearest whole second
+  return Math.round(delay);
+}
+
+/**
  * Calculate cumulative timing for all messages
- * Simple 2-second delay between each message appearing
- * Returns an array of { message, startTime, endTime } for each message
+ * Each message delay is calculated individually based on word count
+ * Returns an array of { message, startTime, endTime, delay } for each message
  */
 export function calculateMessageTimings(messages: Array<{ id: string; sender: 'customer' | 'agent'; text: string }>) {
-  const timings: Array<{ message: typeof messages[0]; startTime: number; endTime: number }> = [];
-  const delayBetweenMessages = 2; // 2 seconds between each message
+  const timings: Array<{ message: typeof messages[0]; startTime: number; endTime: number; delay: number }> = [];
   
-  console.log('calculateMessageTimings: Processing', messages.length, 'messages');
+  console.log('⏱️ calculateMessageTimings: Processing', messages.length, 'messages with NEW word-count-based timing');
+  
+  let cumulativeTime = 0;
   
   for (let i = 0; i < messages.length; i++) {
-    const startTime = i * delayBetweenMessages;
-    // Each message appears and stays visible, so endTime is just startTime + delay
-    // The last message's endTime determines total duration
-    const endTime = startTime + delayBetweenMessages;
+    const delay = calculateMessageDelay(messages[i].text);
+    const startTime = cumulativeTime;
+    const endTime = startTime + delay;
+    const wordCount = getWordCount(messages[i].text);
     
-    console.log(`Message ${i + 1}: startTime=${startTime}s, text="${messages[i].text.substring(0, 30)}..."`);
+    console.log(`⏱️ Message ${i + 1}: startTime=${startTime.toFixed(2)}s, delay=${delay}s, wordCount=${wordCount}, formula: (${wordCount} × 0.204) + 1.275 = ${(wordCount * 0.204 + 1.275).toFixed(2)}s, text="${messages[i].text.substring(0, 30)}..."`);
     
     timings.push({
       message: messages[i],
       startTime,
-      endTime
+      endTime,
+      delay
     });
+    
+    // Next message starts after this message's delay
+    cumulativeTime = endTime;
   }
   
-  console.log('calculateMessageTimings: Final timings:', timings.map(t => ({ startTime: t.startTime, endTime: t.endTime })));
+  const totalDuration = timings.length > 0 ? timings[timings.length - 1].endTime : 0;
+  console.log('⏱️ calculateMessageTimings: Final timings - Total duration:', totalDuration, 'seconds', timings.map(t => ({ startTime: t.startTime.toFixed(2), delay: t.delay, endTime: t.endTime.toFixed(2) })));
   
   return timings;
 }
 
 /**
  * Calculate total duration for all messages
- * This is the total time needed to display all messages with their delays
- * Formula: (number of messages) × 2 seconds
+ * This is the sum of all individual message delays
  */
 export function calculateTotalMessageDuration(messages: Array<{ id: string; sender: 'customer' | 'agent'; text: string }>): number {
   if (messages.length === 0) return 0;
-  // Each message takes 2 seconds, so total duration is number of messages × 2
-  // But we want the last message to appear and stay, so we add one more 2-second interval
-  // Actually, if we have 3 messages at 0s, 2s, 4s, the total should be 6s (last message appears at 4s, component ends at 6s)
-  return messages.length * 2;
+  
+  // Sum all individual message delays
+  let totalDuration = 0;
+  for (const message of messages) {
+    totalDuration += calculateMessageDelay(message.text);
+  }
+  
+  return totalDuration;
 }
 
 const SMSConversation: React.FC<iPhoneSMSCSSProps> = ({
