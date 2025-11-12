@@ -32,6 +32,8 @@ router.get('/', async (req, res) => {
       components = await Component.getAllActive();
     }
 
+    // Components are relatively static, cache for 5 minutes
+    res.set('Cache-Control', 'public, max-age=300');
     res.json({
       success: true,
       data: components.map(component => component.toJSON())

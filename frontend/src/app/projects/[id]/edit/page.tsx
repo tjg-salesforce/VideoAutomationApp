@@ -1265,8 +1265,10 @@ export default function ProjectEditor() {
   // Migration function removed - we now use unified layering system
 
   useEffect(() => {
-    loadProject();
-    loadComponents();
+    // Load project and components in parallel for better performance
+    Promise.all([loadProject(), loadComponents()]).catch(err => {
+      console.error('Error loading project data:', err);
+    });
   }, [projectId]);
 
   // Handle URL parameters for preview mode

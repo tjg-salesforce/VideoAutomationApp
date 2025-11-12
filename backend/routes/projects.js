@@ -210,6 +210,9 @@ router.get('/:id', async (req, res) => {
     const totalTime = Date.now() - startTime;
     console.log(`Project ${id} loaded successfully: ${loadTime}ms (query) + ${Date.now() - startTime - loadTime}ms (processing) = ${totalTime}ms total`);
 
+    // Don't cache project data (it changes frequently)
+    // But enable compression for large JSONB responses
+    res.set('Cache-Control', 'no-cache');
     res.json({
       success: true,
       data: projectData
