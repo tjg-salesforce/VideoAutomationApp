@@ -25,8 +25,9 @@ app.use(cors({
     'http://127.0.0.1:3000', 
     'http://127.0.0.1:3001', 
     'http://127.0.0.1:3005',
-    // Add production frontend URLs here after deployment
-    // Example: 'https://your-app.vercel.app'
+    // Production frontend URLs
+    'https://frontend-bjg9zww8k-tjgs-projects-3c81ae94.vercel.app',
+    'https://*.vercel.app', // Allow all Vercel preview deployments
     ...(process.env.FRONTEND_URL ? [process.env.FRONTEND_URL] : [])
   ],
   credentials: true,

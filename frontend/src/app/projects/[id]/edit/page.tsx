@@ -14,7 +14,6 @@ import PreviewModal from '@/components/PreviewModal';
 import SaveTemplateModal from '@/components/SaveTemplateModal';
 import ProjectSettingsModal from '@/components/ProjectSettingsModal';
 import Toast from '@/components/Toast';
-import lottie from 'lottie-web';
 
 // Video component that responds to timeline controls
 function VideoTimelineControl({ 
@@ -270,7 +269,6 @@ export default function ProjectEditor() {
   const [showSaveTemplateModal, setShowSaveTemplateModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
-  const [lottieData, setLottieData] = useState<any>(null);
   const [showSaveDropdown, setShowSaveDropdown] = useState(false);
   
   // Clip splitting state
@@ -1269,7 +1267,6 @@ export default function ProjectEditor() {
   useEffect(() => {
     loadProject();
     loadComponents();
-    loadLottieData();
   }, [projectId]);
 
   // Handle URL parameters for preview mode
@@ -1317,15 +1314,6 @@ export default function ProjectEditor() {
 
   // Migration effect removed - we now use unified layering system
 
-  const loadLottieData = async () => {
-    try {
-      const response = await fetch('/CustomerLogoSplit.json');
-      const data = await response.json();
-      setLottieData(data);
-    } catch (error) {
-      console.error('Error loading Lottie data:', error);
-    }
-  };
 
   useEffect(() => {
     if (project) {
@@ -3108,171 +3096,6 @@ export default function ProjectEditor() {
     return targets;
   };
 
-  // Function to create and configure a Lottie instance for video rendering
-  const createVideoLottieInstance = (lottieData: any, properties: any) => {
-    // Helper function to convert hex to RGB
-    const hexToRgb = (hex: string) => {
-      const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-      return result ? {
-        r: parseInt(result[1], 16),
-        g: parseInt(result[2], 16),
-        b: parseInt(result[3], 16)
-      } : null;
-    };
-
-    // Helper function to update background color
-    const updateCustomerBgColor = (layers: any[], backgroundColor: string) => {
-      layers.forEach(layer => {
-        if (layer.nm === 'CustomerBg') {
-          if (backgroundColor === 'transparent') {
-            layer.ks.o.k = 0;
-          } else {
-            layer.ks.o.k = 100;
-            if (layer.shapes) {
-              layer.shapes.forEach((shape: any) => {
-                if (shape.ty === 'gr' && shape.it) {
-                  shape.it.forEach((item: any) => {
-                    if (item.ty === 'fl' && item.c) {
-                      const rgb = hexToRgb(backgroundColor);
-                      if (rgb) {
-                        item.c.k = [rgb.r / 255, rgb.g / 255, rgb.b / 255, 1];
-                      }
-                    }
-                  });
-                } else if (shape.ty === 'fl' && shape.c) {
-                  const rgb = hexToRgb(backgroundColor);
-                  if (rgb) {
-                    shape.c.k = [rgb.r / 255, rgb.g / 255, rgb.b / 255, 1];
-                  }
-                }
-              });
-            }
-          }
-        }
-        if (layer.layers) {
-          updateCustomerBgColor(layer.layers, backgroundColor);
-        }
-      });
-    };
-
-    // Apply properties to the Lottie data
-    const updatedData = JSON.parse(JSON.stringify(lottieData));
-    
-    // Update background color
-    if (properties.backgroundColor) {
-      updateCustomerBgColor(updatedData.layers, properties.backgroundColor);
-    }
-
-    // Update logo if provided
-    if (properties.customerLogo && properties.customerLogo.data) {
-      const logoAsset = updatedData.assets.find((asset: any) => asset.id === '1');
-      if (logoAsset) {
-        logoAsset.p = properties.customerLogo.data;
-      }
-    }
-
-    // Create a hidden container for the Lottie instance
-    const container = document.createElement('div');
-    container.style.position = 'absolute';
-    container.style.left = '-9999px';
-    container.style.top = '-9999px';
-    container.style.width = '1920px';
-    container.style.height = '1080px';
-    container.style.visibility = 'visible'; // Make visible for initialization
-    container.style.pointerEvents = 'none';
-    container.style.zIndex = '-1';
-    document.body.appendChild(container);
-
-    // Create Lottie instance
-    console.log('Creating Lottie instance for video rendering with data:', {
-      width: updatedData.w,
-      height: updatedData.h,
-      frames: updatedData.op - updatedData.ip,
-      containerSize: `${container.offsetWidth}x${container.offsetHeight}`
-    });
-    
-    const lottieInstance = lottie.loadAnimation({
-      container: container,
-      renderer: 'canvas',
-      loop: false,
-      autoplay: false,
-      animationData: updatedData,
-      rendererSettings: {
-        preserveAspectRatio: 'xMidYMid meet',
-        clearCanvas: true
-      }
-    });
-
-    // Force render the first frame to ensure canvas is populated
-    lottieInstance.addEventListener('DOMLoaded', () => {
-      console.log('Lottie DOM loaded, forcing first frame render');
-      lottieInstance.goToAndStop(0, true);
-      
-      // Check if canvas has content after forcing render
-      setTimeout(() => {
-        console.log('Checking Lottie renderer after DOMLoaded:', {
-          hasRenderer: !!lottieInstance.renderer,
-          rendererType: lottieInstance.renderer?.type,
-          hasCanvas: !!lottieInstance.renderer?.canvas,
-          canvasSize: lottieInstance.renderer?.canvas ? `${lottieInstance.renderer.canvas.width}x${lottieInstance.renderer.canvas.height}` : 'N/A',
-          rendererKeys: lottieInstance.renderer ? Object.keys(lottieInstance.renderer) : 'N/A'
-        });
-        
-        const canvas = lottieInstance.renderer?.canvas;
-        if (canvas) {
-          const testCtx = canvas.getContext('2d');
-          const imageData = testCtx.getImageData(0, 0, Math.min(10, canvas.width), Math.min(10, canvas.height));
-          const hasContent = imageData.data.some((pixel: number) => pixel !== 0);
-          console.log('Canvas content check after forced render:', hasContent);
-        } else {
-          console.warn('Canvas not available after DOMLoaded event');
-        }
-      }, 100);
-    });
-
-    // Add more debugging events
-    lottieInstance.addEventListener('error', (error) => {
-      console.error('Lottie instance error:', error);
-    });
-
-    lottieInstance.addEventListener('complete', () => {
-      console.log('Lottie animation complete');
-    });
-
-    lottieInstance.addEventListener('loopComplete', () => {
-      console.log('Lottie loop complete');
-    });
-
-    // Add debugging
-    lottieInstance.addEventListener('DOMLoaded', () => {
-      // Use setTimeout to ensure renderer is fully initialized
-      setTimeout(() => {
-        if (lottieInstance.renderer && lottieInstance.renderer.canvas) {
-          console.log('Lottie instance loaded for video rendering, canvas size:', lottieInstance.renderer.canvas.width, 'x', lottieInstance.renderer.canvas.height);
-        } else {
-          console.log('Lottie instance loaded for video rendering, but renderer not ready yet');
-        }
-      }, 50);
-    });
-
-    lottieInstance.addEventListener('data_ready', () => {
-      console.log('Lottie data ready for video rendering');
-    });
-
-    // Debug renderer immediately after creation
-    setTimeout(() => {
-      console.log('Immediate renderer check after Lottie creation:', {
-        hasInstance: !!lottieInstance,
-        hasRenderer: !!lottieInstance.renderer,
-        rendererType: lottieInstance.renderer?.type,
-        hasCanvas: !!lottieInstance.renderer?.canvas,
-        canvasSize: lottieInstance.renderer?.canvas ? `${lottieInstance.renderer.canvas.width}x${lottieInstance.renderer.canvas.height}` : 'N/A',
-        rendererKeys: lottieInstance.renderer ? Object.keys(lottieInstance.renderer) : 'N/A'
-      });
-    }, 50);
-
-    return { lottieInstance, container };
-  };
 
 
   const getCurrentComponent = () => {
