@@ -17,14 +17,7 @@ const PORT = process.env.PORT || 3001;
 // Middleware
 app.use(compression({
   level: 6, // Compression level (1-9, 6 is good balance)
-  threshold: 1024, // Only compress responses > 1KB
-  filter: (req, res) => {
-    // Compress all JSON responses
-    if (req.headers['x-no-compression']) {
-      return false;
-    }
-    return compression.filter(req, res);
-  }
+  threshold: 1024 // Only compress responses > 1KB
 })); // Enable gzip compression
 app.use(helmet());
 app.use(cors({
