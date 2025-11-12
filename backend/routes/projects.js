@@ -23,14 +23,29 @@ router.get('/', async (req, res) => {
 
     let projects;
     if (folderId && folderId !== 'null' && folderId !== 'root') {
-      // Get projects in specific folder - use lightweight query for list view
+      // Get projects in specific folder AND all subfolders (recursive)
+      // Use recursive CTE to get all descendant folder IDs
       if (isLightweight) {
         // Only select essential fields for list view (much faster)
-        const sql = `SELECT id, name, description, template_id, status, owner_id, locked_by, folder_id, 
-                           created_at, updated_at, last_rendered_at, output_url
-                     FROM projects 
-                     WHERE owner_id = $1 AND folder_id = $2 
-                     ORDER BY updated_at DESC`;
+        const sql = `
+          WITH RECURSIVE folder_tree AS (
+            -- Base case: the selected folder
+            SELECT id FROM folders WHERE id = $2 AND owner_id = $1
+            UNION
+            -- Recursive case: all children
+            SELECT f.id 
+            FROM folders f
+            INNER JOIN folder_tree ft ON f.parent_id = ft.id
+            WHERE f.owner_id = $1
+          )
+          SELECT p.id, p.name, p.description, p.template_id, p.status, p.owner_id, 
+                 p.locked_by, p.folder_id, p.created_at, p.updated_at, 
+                 p.last_rendered_at, p.output_url
+          FROM projects p
+          INNER JOIN folder_tree ft ON p.folder_id = ft.id
+          WHERE p.owner_id = $1
+          ORDER BY p.updated_at DESC
+        `;
         
         const result = await query(sql, [userId, folderId]);
         projects = result.rows.map(row => {
@@ -56,7 +71,23 @@ router.get('/', async (req, res) => {
         });
       } else {
         // Full project data
-        const sql = 'SELECT * FROM projects WHERE owner_id = $1 AND folder_id = $2 ORDER BY updated_at DESC';
+        const sql = `
+          WITH RECURSIVE folder_tree AS (
+            -- Base case: the selected folder
+            SELECT id FROM folders WHERE id = $2 AND owner_id = $1
+            UNION
+            -- Recursive case: all children
+            SELECT f.id 
+            FROM folders f
+            INNER JOIN folder_tree ft ON f.parent_id = ft.id
+            WHERE f.owner_id = $1
+          )
+          SELECT p.*
+          FROM projects p
+          INNER JOIN folder_tree ft ON p.folder_id = ft.id
+          WHERE p.owner_id = $1
+          ORDER BY p.updated_at DESC
+        `;
         
         const result = await query(sql, [userId, folderId]);
         projects = result.rows.map(row => {
