@@ -198,6 +198,7 @@ export default function ProjectEditor() {
   } | null>(null);
   const [dragOutline, setDragOutline] = useState<{x: number, y: number, time: number, layer: number, width: number, item: any, targetTop?: number, isPlaceholder?: boolean} | null>(null);
   const [snapToGrid, setSnapToGrid] = useState(true);
+  const [snapLock, setSnapLock] = useState<{ time: number; lockedTime: number } | null>(null);
   const [editingLayerName, setEditingLayerName] = useState<string | null>(null);
   const [editingLayerValue, setEditingLayerValue] = useState('');
   const [timelineZoom, setTimelineZoom] = useState(1); // 1 = normal, 2 = 2x zoom, 0.5 = half zoom
@@ -900,30 +901,44 @@ export default function ProjectEditor() {
     
     if (!item) return;
 
-    const collision = checkCollision(itemId, layerId, newStartTime, item.duration);
+    // Apply snapping if enabled and near a boundary
+    let finalStartTime = newStartTime;
+    if (snapToGrid) {
+      const snappedTime = findNearestSnapTarget(newStartTime, itemId);
+      // Only use snapped time if we found a valid snap target
+      // (findNearestSnapTarget returns null if not near any boundary)
+      if (snappedTime !== null) {
+        finalStartTime = snappedTime;
+      } else {
+        // Not near any boundary - clear any existing snap lock
+        setSnapLock(null);
+      }
+    }
+
+    const collision = checkCollision(itemId, layerId, finalStartTime, item.duration);
     
     if (collision && collision.type === 'snap') {
       // Snap to adjacent item, 0s mark, or playhead
       setDragPreview({
         x: 0,
         y: 0,
-        time: collision.snapTime || 0,
+        time: collision.snapTime || finalStartTime,
         layer: 0,
         itemId,
         layerId,
-        startTime: collision.snapTime || 0,
+        startTime: collision.snapTime || finalStartTime,
         duration: item.duration
       });
     } else {
-      // No collision - normal drag
+      // Use snapped time if available, otherwise use original
       setDragPreview({
         x: 0,
         y: 0,
-        time: newStartTime,
+        time: finalStartTime,
         layer: 0,
         itemId,
         layerId,
-        startTime: newStartTime,
+        startTime: finalStartTime,
         duration: item.duration
       });
     }
@@ -1079,13 +1094,30 @@ export default function ProjectEditor() {
     const target = e.target as HTMLElement;
     const isTimelineItem = target.closest('[data-group-id]') || 
                           target.closest('.absolute') ||
-                          target.closest('.group');
+                          target.closest('.group') ||
+                          target.closest('input[type="range"]'); // Don't interfere with scrubber slider
     
     // Only clear selection if we didn't click on a timeline item
     if (!isTimelineItem) {
       setSelectedItems(new Set());
       setSelectedMediaItem(null);
       setSelectedTimelineItem(null);
+      
+      // Calculate click position on timeline and move scrubber there
+      const timelineRect = timelineRef.current?.getBoundingClientRect();
+      if (timelineRect) {
+        const clickX = e.clientX - timelineRect.left;
+        const clickedTime = (clickX / timelineRect.width) * totalDuration;
+        const clampedTime = Math.max(0, Math.min(clickedTime, totalDuration));
+        
+        // Apply snapping if enabled
+        if (snapToGrid) {
+          const snappedTime = findNearestSnapTarget(clampedTime);
+          setCurrentTime(snappedTime !== null ? snappedTime : clampedTime);
+        } else {
+          setCurrentTime(clampedTime);
+        }
+      }
     }
   };
 
@@ -1773,6 +1805,9 @@ export default function ProjectEditor() {
     
     setIsDraggingItem(null);
     
+    // Clear snap lock when dragging ends
+    setSnapLock(null);
+    
     // Reset the justDragged flag after a short delay to allow click handlers to check it
     setTimeout(() => setJustDragged(false), 100);
   };
@@ -1996,23 +2031,52 @@ export default function ProjectEditor() {
       
       if (direction === 'end') {
         // Extending the end
+        let rawEndTime = startTime + startDuration + deltaTime;
+        let rawDuration = startDuration + deltaTime;
+        
         if (isOptionHeld && isMediaItem(item) && item.asset?.type === 'video') {
           // With Option held, allow extending beyond video length for freeze frame
-          newDuration = Math.max(1, startDuration + deltaTime);
+          rawDuration = startDuration + deltaTime;
         } else if (isMediaItem(item) && item.asset?.type === 'video') {
           // Without Option, limit to original video length
           const maxDuration = item.asset.duration || startDuration;
-          newDuration = Math.max(1, Math.min(maxDuration, startDuration + deltaTime));
-      } else {
+          rawDuration = Math.min(maxDuration, startDuration + deltaTime);
+        } else {
           // For images and components, allow unlimited extension
-        newDuration = Math.max(1, startDuration + deltaTime);
+          rawDuration = startDuration + deltaTime;
+        }
+        
+        // Apply snapping to end time if snapToGrid is enabled
+        if (snapToGrid) {
+          const snappedEndTime = findNearestSnapTarget(rawEndTime, item.id);
+          if (snappedEndTime !== null && snappedEndTime > startTime) {
+            newDuration = Math.max(1, snappedEndTime - startTime);
+          } else {
+            newDuration = Math.max(1, rawDuration);
+          }
+        } else {
+          newDuration = Math.max(1, rawDuration);
         }
       } else {
         // Resizing the start handle
         // Dragging right moves start time later (reduces duration)
         // Dragging left moves start time earlier (increases duration)
-        newStartTime = Math.max(0, startTime + deltaTime);
-        newDuration = Math.max(1, startDuration - deltaTime);
+        let rawStartTime = Math.max(0, startTime + deltaTime);
+        
+        // Apply snapping to start time if snapToGrid is enabled
+        if (snapToGrid) {
+          const snappedStartTime = findNearestSnapTarget(rawStartTime, item.id);
+          if (snappedStartTime !== null) {
+            newStartTime = snappedStartTime;
+            newDuration = Math.max(1, startDuration - (newStartTime - startTime));
+          } else {
+            newStartTime = rawStartTime;
+            newDuration = Math.max(1, startDuration - deltaTime);
+          }
+        } else {
+          newStartTime = rawStartTime;
+          newDuration = Math.max(1, startDuration - deltaTime);
+        }
       }
       
       // Update the item in the timeline
@@ -2157,6 +2221,8 @@ export default function ProjectEditor() {
     const handleMouseUp = () => {
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
+      // Clear snap lock when resize ends
+      setSnapLock(null);
     };
     
     document.addEventListener('mousemove', handleMouseMove);
@@ -2185,11 +2251,38 @@ export default function ProjectEditor() {
       
       if (direction === 'end') {
         // Extending the end
-        newDuration = Math.max(1, startDuration + deltaTime); // Minimum 1 second
+        let rawEndTime = startTime + startDuration + deltaTime;
+        let rawDuration = Math.max(1, startDuration + deltaTime);
+        
+        // Apply snapping to end time if snapToGrid is enabled
+        if (snapToGrid) {
+          const snappedEndTime = findNearestSnapTarget(rawEndTime, item.id);
+          if (snappedEndTime !== null && snappedEndTime > startTime) {
+            newDuration = Math.max(1, snappedEndTime - startTime);
+          } else {
+            newDuration = rawDuration;
+          }
+        } else {
+          newDuration = rawDuration;
+        }
       } else {
         // Resizing the start handle
-        newStartTime = Math.max(0, startTime + deltaTime);
-        newDuration = Math.max(1, startDuration - deltaTime);
+        let rawStartTime = Math.max(0, startTime + deltaTime);
+        
+        // Apply snapping to start time if snapToGrid is enabled
+        if (snapToGrid) {
+          const snappedStartTime = findNearestSnapTarget(rawStartTime, item.id);
+          if (snappedStartTime !== null) {
+            newStartTime = snappedStartTime;
+            newDuration = Math.max(1, startDuration - (newStartTime - startTime));
+          } else {
+            newStartTime = rawStartTime;
+            newDuration = Math.max(1, startDuration - deltaTime);
+          }
+        } else {
+          newStartTime = rawStartTime;
+          newDuration = Math.max(1, startDuration - deltaTime);
+        }
       }
       
       // Update the group item in the timeline
@@ -2210,6 +2303,8 @@ export default function ProjectEditor() {
     const handleMouseUp = () => {
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
+      // Clear snap lock when group resize ends
+      setSnapLock(null);
     };
     
     document.addEventListener('mousemove', handleMouseMove);
@@ -2843,6 +2938,134 @@ export default function ProjectEditor() {
     }
     
     return markers;
+  };
+
+  // Get all clip boundaries (start and end times) across all layers, excluding a specific item or group
+  const getAllClipBoundaries = (excludeItemId?: string) => {
+    const boundaries: number[] = [];
+    const excludeIds = new Set<string>();
+    
+    // If excluding a group, exclude all items in that group
+    if (excludeItemId) {
+      excludeIds.add(excludeItemId);
+      // Find if it's a group and get all item IDs in the group
+      timelineLayers.forEach(layer => {
+        const groupItem = layer.items.find((item: any) => item.id === excludeItemId && (item as any).isGroup);
+        if (groupItem && (groupItem as any).groupItems) {
+          (groupItem as any).groupItems.forEach((id: string) => excludeIds.add(id));
+        }
+      });
+    }
+    
+    // Add 0s mark
+    boundaries.push(0);
+    
+    // Add boundaries from all timeline layers
+    timelineLayers.forEach(layer => {
+      layer.items.forEach((item: any) => {
+        // Skip the item being resized or items in the group being resized
+        if (excludeIds.has(item.id)) return;
+        
+        // Add start time
+        if (typeof item.start_time === 'number' && !isNaN(item.start_time)) {
+          boundaries.push(item.start_time);
+        }
+        // Add end time
+        if (typeof item.start_time === 'number' && typeof item.duration === 'number' && 
+            !isNaN(item.start_time) && !isNaN(item.duration)) {
+          boundaries.push(item.start_time + item.duration);
+        }
+      });
+    });
+    
+    // Add boundaries from old timeline items (for backward compatibility)
+    timeline.forEach(item => {
+      if (typeof item.start_time === 'number' && !isNaN(item.start_time)) {
+        boundaries.push(item.start_time);
+      }
+      if (typeof item.start_time === 'number' && typeof item.duration === 'number' &&
+          !isNaN(item.start_time) && !isNaN(item.duration)) {
+        boundaries.push(item.start_time + item.duration);
+      }
+    });
+    
+    // Sort and remove duplicates
+    return [...new Set(boundaries)].sort((a, b) => a - b);
+  };
+
+  // Find the nearest snap target within threshold, with snap lock support
+  const findNearestSnapTarget = (time: number, excludeItemId?: string, threshold?: number) => {
+    // Calculate dynamic threshold based on timeline zoom and width
+    // At 1x zoom, use ~30px threshold, scale with zoom
+    const timelineRect = timelineRef.current?.getBoundingClientRect();
+    let defaultThreshold: number;
+    
+    if (threshold !== undefined) {
+      defaultThreshold = threshold;
+    } else if (timelineRect && timelineRect.width > 0) {
+      // Convert 30 pixels to time units, accounting for zoom
+      defaultThreshold = (30 / timelineRect.width) * totalDuration;
+      // Scale threshold inversely with zoom (more zoom = smaller threshold in time, but same in pixels)
+      defaultThreshold = defaultThreshold / timelineZoom;
+    } else {
+      // Fallback to 0.2 seconds
+      defaultThreshold = 0.2;
+    }
+    
+    const boundaries = getAllClipBoundaries(excludeItemId);
+    
+    if (boundaries.length === 0) return null;
+    
+    let nearestBoundary: number | null = null;
+    let minDistance = defaultThreshold;
+    
+    for (const boundary of boundaries) {
+      const distance = Math.abs(time - boundary);
+      if (distance < minDistance) {
+        minDistance = distance;
+        nearestBoundary = boundary;
+      }
+    }
+    
+    // If we found a snap target
+    if (nearestBoundary !== null) {
+      // Check if we have an existing snap lock for this position
+      if (snapLock && Math.abs(snapLock.time - nearestBoundary) < 0.01) {
+        // Same snap position - check if lock is still valid (within 2 seconds)
+        const lockAge = Date.now() - snapLock.lockedTime;
+        if (lockAge < 2000) {
+          // Still within 2 second lock period - return locked snap position
+          return snapLock.time;
+        } else {
+          // Lock expired - update to new lock time
+          setSnapLock({ time: nearestBoundary, lockedTime: Date.now() });
+        }
+      } else {
+        // New snap position or no existing lock - set new lock
+        setSnapLock({ time: nearestBoundary, lockedTime: Date.now() });
+      }
+      return nearestBoundary;
+    } else {
+      // Not near any boundary - clear snap lock if we're far from the locked position
+      if (snapLock) {
+        const distanceFromLock = Math.abs(time - snapLock.time);
+        // If we're more than 2x the threshold away from the locked position, clear the lock
+        if (distanceFromLock > defaultThreshold * 2) {
+          setSnapLock(null);
+        } else {
+          // Still near the locked position - check if lock expired
+          const lockAge = Date.now() - snapLock.lockedTime;
+          if (lockAge >= 2000) {
+            // Lock expired - clear it so we can move freely
+            setSnapLock(null);
+          } else {
+            // Still locked - return locked position
+            return snapLock.time;
+          }
+        }
+      }
+      return null;
+    }
   };
 
   // Find snap targets for smart snapping
