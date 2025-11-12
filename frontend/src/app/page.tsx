@@ -1,19 +1,93 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { apiEndpoints } from '@/lib/api';
 import { Project } from '@/types';
-import { PlusIcon, PlayIcon, PencilIcon, TrashIcon, MagnifyingGlassIcon, DocumentDuplicateIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, PlayIcon, PencilIcon, TrashIcon, MagnifyingGlassIcon, DocumentDuplicateIcon, FolderIcon } from '@heroicons/react/24/outline';
 import NewProjectModal from '@/components/NewProjectModal';
 import UseTemplateModal from '@/components/UseTemplateModal';
 import DeleteTemplateModal from '@/components/DeleteTemplateModal';
+import FolderTree, { Folder } from '@/components/FolderTree';
 import Toast from '@/components/Toast';
+
+// Draggable project item component
+const DraggableProjectItem = ({ project, onEdit, onDelete }: { project: Project; onEdit: (project: Project) => void; onDelete: (project: Project) => void }) => {
+  const [isDragging, setIsDragging] = useState(false);
+  
+  const handleDragStart = (e: React.DragEvent) => {
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('application/project-id', project.id);
+    setIsDragging(true);
+  };
+
+  const handleDragEnd = () => {
+    setIsDragging(false);
+  };
+
+  return (
+    <div
+      draggable
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+      className={`flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50 group cursor-move ${
+        isDragging ? 'opacity-50' : ''
+      }`}
+    >
+      <div className="flex-1">
+        <h4 className="text-sm font-medium text-gray-900">{project.name}</h4>
+        <p className="text-sm text-gray-500">{project.description || 'No description'}</p>
+        <div className="flex items-center space-x-2 mt-1">
+          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+            project.status === 'completed' ? 'bg-green-100 text-green-800' :
+            project.status === 'in_progress' ? 'bg-yellow-100 text-yellow-800' :
+            project.status === 'failed' ? 'bg-red-100 text-red-800' :
+            'bg-gray-100 text-gray-800'
+          }`}>
+            {project.status}
+          </span>
+          {project.timeline && project.timeline.length > 0 && (
+            <span className="text-xs text-gray-500">
+              {project.timeline.length} component{project.timeline.length !== 1 ? 's' : ''}
+            </span>
+          )}
+        </div>
+      </div>
+      <div className="flex items-center space-x-2">
+        <div className="text-sm text-gray-500">
+          {project.created_at ? new Date(project.created_at).toLocaleDateString() : 'Unknown'}
+        </div>
+        <div className="flex items-center space-x-1">
+          <button
+            onClick={() => onEdit(project)}
+            className="p-1 text-gray-400 hover:text-blue-600"
+            title="Edit project"
+          >
+            <PencilIcon className="h-4 w-4" />
+          </button>
+          <button
+            onClick={() => onDelete(project)}
+            className="p-1 text-gray-400 hover:text-red-600"
+            title="Delete project"
+          >
+            <TrashIcon className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 export default function Home() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [templates, setTemplates] = useState<any[]>([]);
+  const [folders, setFolders] = useState<Folder[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingProjects, setLoadingProjects] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  
+  // Folder states
+  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
+  const [newlyCreatedFolderId, setNewlyCreatedFolderId] = useState<string | null>(null);
   
   // Modal states
   const [showNewProjectModal, setShowNewProjectModal] = useState(false);
@@ -37,42 +111,140 @@ export default function Home() {
 
   useEffect(() => {
     loadData();
+    loadFolders();
   }, []);
 
+  useEffect(() => {
+    // Reload projects when folder selection changes
+    if (!loading) {
+      loadProjects();
+    }
+  }, [selectedFolderId]);
+
   const loadData = async () => {
+    await Promise.all([loadProjects(), loadTemplates()]);
+  };
+
+  const loadProjects = async () => {
+    setLoadingProjects(true);
     try {
-      setLoading(true);
-      setError(null); // Clear previous errors
-      console.log('Loading data from backend...');
-      
-      const [projectsRes, templatesRes] = await Promise.all([
-        apiEndpoints.getProjects('default-user').catch(err => {
-          console.error('Projects API error:', err);
-          return { data: { data: [] } }; // Return empty array on error
-        }),
-        apiEndpoints.getTemplates(true).catch(err => {
-          console.error('Templates API error:', err);
-          return { data: { data: [] } }; // Return empty array on error
-        })
-      ]);
-      
-      console.log('API responses:', { projectsRes, templatesRes });
-      
+      // Use lightweight=true to only fetch essential fields (much faster)
+      const projectsRes = await apiEndpoints.getProjects('default-user', selectedFolderId, true).catch(err => {
+        console.error('Projects API error:', err);
+        return { data: { data: [] } };
+      });
       setProjects(projectsRes.data.data || []);
+    } catch (err) {
+      console.error('Error loading projects:', err);
+      setProjects([]);
+    } finally {
+      setLoadingProjects(false);
+    }
+  };
+
+  const loadTemplates = async () => {
+    try {
+      const templatesRes = await apiEndpoints.getTemplates(true).catch(err => {
+        console.error('Templates API error:', err);
+        return { data: { data: [] } };
+      });
       setTemplates(templatesRes.data.data || []);
     } catch (err) {
-      console.error('Detailed error:', err);
-      setError(`Failed to load data from backend: ${err instanceof Error ? err.message : 'Unknown error'}`);
-      // Set empty arrays to prevent undefined errors
-      setProjects([]);
+      console.error('Error loading templates:', err);
       setTemplates([]);
+    }
+  };
+
+  const loadFolders = async () => {
+    try {
+      const foldersRes = await apiEndpoints.getFolders('default-user', true).catch(err => {
+        console.error('Folders API error:', err);
+        return { data: { data: [] } };
+      });
+      setFolders(foldersRes.data.data || []);
+    } catch (err) {
+      console.error('Error loading folders:', err);
+      setFolders([]);
     } finally {
       setLoading(false);
     }
   };
 
   const handleProjectCreated = () => {
-    loadData(); // Refresh the data
+    loadProjects(); // Refresh the projects
+  };
+
+  // Folder management handlers
+  const handleCreateFolder = async (parentId: string | null) => {
+    try {
+      // Create folder with default name
+      const defaultName = 'New Folder';
+      const response = await apiEndpoints.createFolder({ name: defaultName, parentId });
+      const newFolder = response.data.data;
+      setNewlyCreatedFolderId(newFolder.id);
+      setToast({ message: 'Folder created! Edit the name to customize.', type: 'success' });
+      await loadFolders();
+      // Keep the flag set so the folder stays editable
+      // It will be cleared when the user finishes editing or after a timeout
+      setTimeout(() => setNewlyCreatedFolderId(null), 5000);
+    } catch (err: any) {
+      console.error('Error creating folder:', err);
+      setToast({ 
+        message: err.response?.data?.error || 'Failed to create folder', 
+        type: 'error' 
+      });
+    }
+  };
+
+  const handleRenameFolder = async (folderId: string, newName: string) => {
+    try {
+      await apiEndpoints.updateFolder(folderId, { name: newName });
+      setToast({ message: 'Folder renamed successfully!', type: 'success' });
+      setNewlyCreatedFolderId(null); // Clear the flag after rename
+      await loadFolders();
+    } catch (err: any) {
+      console.error('Error renaming folder:', err);
+      setToast({ 
+        message: err.response?.data?.error || 'Failed to rename folder', 
+        type: 'error' 
+      });
+    }
+  };
+
+  const handleDeleteFolder = async (folderId: string) => {
+    if (!window.confirm('Are you sure you want to delete this folder? Subfolders will be moved to the parent folder.')) {
+      return;
+    }
+
+    try {
+      await apiEndpoints.deleteFolder(folderId, true);
+      setToast({ message: 'Folder deleted successfully!', type: 'success' });
+      if (selectedFolderId === folderId) {
+        setSelectedFolderId(null); // Clear selection if deleted folder was selected
+      }
+      loadFolders();
+      loadProjects();
+    } catch (err: any) {
+      console.error('Error deleting folder:', err);
+      setToast({ 
+        message: err.response?.data?.error || 'Failed to delete folder', 
+        type: 'error' 
+      });
+    }
+  };
+
+  const handleMoveProject = async (projectId: string, folderId: string | null) => {
+    try {
+      await apiEndpoints.moveProject(projectId, folderId);
+      setToast({ message: 'Project moved successfully!', type: 'success' });
+      loadProjects();
+    } catch (err: any) {
+      console.error('Error moving project:', err);
+      setToast({ 
+        message: err.response?.data?.error || 'Failed to move project', 
+        type: 'error' 
+      });
+    }
   };
 
   const handleUseTemplate = (template: any) => {
@@ -215,9 +387,35 @@ export default function Home() {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="flex gap-6">
+          {/* Folder Sidebar */}
+          <div className="w-64 flex-shrink-0">
+            <div className="bg-white shadow rounded-lg p-4">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-sm font-semibold text-gray-900">Folders</h2>
+                <button
+                  onClick={() => handleCreateFolder(null)}
+                  className="p-1 text-gray-400 hover:text-blue-600"
+                  title="Create folder"
+                >
+                  <PlusIcon className="w-4 h-4" />
+                </button>
+              </div>
+                    <FolderTree
+                      folders={folders}
+                      selectedFolderId={selectedFolderId}
+                      onSelectFolder={setSelectedFolderId}
+                      onCreateFolder={handleCreateFolder}
+                      onRenameFolder={handleRenameFolder}
+                      onDeleteFolder={handleDeleteFolder}
+                      onDropProject={handleMoveProject}
+                      newlyCreatedFolderId={newlyCreatedFolderId}
+                    />
+            </div>
+          </div>
 
-        {/* Projects and Templates Tabs */}
-        <div className="bg-white shadow rounded-lg">
+          {/* Projects and Templates Tabs */}
+          <div className="flex-1 bg-white shadow rounded-lg">
           <div className="px-4 py-5 sm:p-6">
             <div className="border-b border-gray-200 mb-6">
               <nav className="-mb-px flex space-x-8">
@@ -230,6 +428,11 @@ export default function Home() {
                   }`}
                 >
                   My Projects ({searchTerm ? `${filteredProjects.length}/${projects.length}` : projects.length})
+                  {selectedFolderId && (
+                    <span className="ml-2 text-xs text-gray-500">
+                      (in folder)
+                    </span>
+                  )}
                 </button>
                 <button 
                   onClick={() => setActiveTab('templates')}
@@ -247,7 +450,12 @@ export default function Home() {
             {/* My Projects Tab Content */}
             <div className={activeTab === 'projects' ? 'block' : 'hidden'}>
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg leading-6 font-medium text-gray-900">My Projects</h3>
+                <h3 className="text-lg leading-6 font-medium text-gray-900">
+                  My Projects
+                  {loadingProjects && (
+                    <span className="ml-2 text-sm text-gray-500">(Loading...)</span>
+                  )}
+                </h3>
                 <div className="relative">
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                     <MagnifyingGlassIcon className="h-5 w-5 text-gray-400" />
@@ -261,7 +469,12 @@ export default function Home() {
                   />
                 </div>
               </div>
-            {filteredProjects.length === 0 ? (
+            {loadingProjects ? (
+              <div className="text-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+                <p className="mt-4 text-sm text-gray-600">Loading projects...</p>
+              </div>
+            ) : filteredProjects.length === 0 ? (
               <div className="text-center py-8">
                 <PlayIcon className="mx-auto h-12 w-12 text-gray-400" />
                 <h3 className="mt-2 text-sm font-medium text-gray-900">
@@ -288,48 +501,12 @@ export default function Home() {
             ) : (
               <div className="space-y-3">
                 {filteredProjects.map((project) => (
-                  <div key={project.id} className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50">
-                    <div className="flex-1">
-                      <h4 className="text-sm font-medium text-gray-900">{project.name}</h4>
-                      <p className="text-sm text-gray-500">{project.description || 'No description'}</p>
-                      <div className="flex items-center space-x-2 mt-1">
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                          project.status === 'completed' ? 'bg-green-100 text-green-800' :
-                          project.status === 'in_progress' ? 'bg-yellow-100 text-yellow-800' :
-                          project.status === 'failed' ? 'bg-red-100 text-red-800' :
-                          'bg-gray-100 text-gray-800'
-                        }`}>
-                          {project.status}
-                        </span>
-                        {project.timeline && project.timeline.length > 0 && (
-                          <span className="text-xs text-gray-500">
-                            {project.timeline.length} component{project.timeline.length !== 1 ? 's' : ''}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <div className="text-sm text-gray-500">
-                        {project.created_at ? new Date(project.created_at).toLocaleDateString() : 'Unknown'}
-                      </div>
-                      <div className="flex items-center space-x-1">
-                        <button
-                          onClick={() => handleEditProject(project)}
-                          className="p-1 text-gray-400 hover:text-blue-600"
-                          title="Edit project"
-                        >
-                          <PencilIcon className="h-4 w-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteProject(project)}
-                          className="p-1 text-gray-400 hover:text-red-600"
-                          title="Delete project"
-                        >
-                          <TrashIcon className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
+                  <DraggableProjectItem
+                    key={project.id}
+                    project={project}
+                    onEdit={handleEditProject}
+                    onDelete={handleDeleteProject}
+                  />
                 ))}
               </div>
             )}
@@ -389,8 +566,8 @@ export default function Home() {
               )}
             </div>
           </div>
+          </div>
         </div>
-
       </main>
 
       {/* Modals */}
@@ -420,6 +597,7 @@ export default function Home() {
         }}
         onConfirm={confirmDeleteTemplate}
       />
+
 
       {/* Toast Notification */}
       {toast && (

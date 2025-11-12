@@ -17,10 +17,105 @@ router.use((req, res, next) => {
 // GET /api/projects - Get all projects for a user
 router.get('/', async (req, res) => {
   try {
-    const { ownerId } = req.query;
+    const { ownerId, folderId, lightweight } = req.query;
     const userId = ownerId || 'default-user'; // Default user for MVP
+    const isLightweight = lightweight === 'true';
 
-    const projects = await Project.getByOwner(userId);
+    let projects;
+    if (folderId && folderId !== 'null' && folderId !== 'root') {
+      // Get projects in specific folder - use lightweight query for list view
+      if (isLightweight) {
+        // Only select essential fields for list view (much faster)
+        const sql = `SELECT id, name, description, template_id, status, owner_id, locked_by, folder_id, 
+                           created_at, updated_at, last_rendered_at, output_url
+                     FROM projects 
+                     WHERE owner_id = $1 AND folder_id = $2 
+                     ORDER BY updated_at DESC`;
+        
+        const result = await query(sql, [userId, folderId]);
+        projects = result.rows.map(row => {
+          const project = new Project({
+            id: row.id,
+            name: row.name,
+            description: row.description,
+            template_id: row.template_id,
+            status: row.status,
+            owner_id: row.owner_id,
+            locked_by: row.locked_by,
+            folder_id: row.folder_id,
+            merge_fields: {},
+            timeline: [],
+            settings: {},
+            render_settings: {},
+            output_url: row.output_url,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+            last_rendered_at: row.last_rendered_at
+          });
+          return project;
+        });
+      } else {
+        // Full project data
+        const sql = 'SELECT * FROM projects WHERE owner_id = $1 AND folder_id = $2 ORDER BY updated_at DESC';
+        
+        const result = await query(sql, [userId, folderId]);
+        projects = result.rows.map(row => {
+          const project = new Project({
+            id: row.id,
+            name: row.name,
+            description: row.description,
+            template_id: row.template_id,
+            status: row.status,
+            owner_id: row.owner_id,
+            locked_by: row.locked_by,
+            folder_id: row.folder_id,
+            merge_fields: row.merge_fields,
+            timeline: row.timeline,
+            settings: row.settings,
+            render_settings: row.render_settings,
+            output_url: row.output_url,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+            last_rendered_at: row.last_rendered_at
+          });
+          return project;
+        });
+      }
+    } else {
+      if (isLightweight) {
+        // Lightweight query for all projects
+        const sql = `SELECT id, name, description, template_id, status, owner_id, locked_by, folder_id, 
+                           created_at, updated_at, last_rendered_at, output_url
+                     FROM projects 
+                     WHERE owner_id = $1 
+                     ORDER BY updated_at DESC`;
+        const result = await query(sql, [userId]);
+        projects = result.rows.map(row => {
+          const project = new Project({
+            id: row.id,
+            name: row.name,
+            description: row.description,
+            template_id: row.template_id,
+            status: row.status,
+            owner_id: row.owner_id,
+            locked_by: row.locked_by,
+            folder_id: row.folder_id,
+            merge_fields: {},
+            timeline: [],
+            settings: {},
+            render_settings: {},
+            output_url: row.output_url,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+            last_rendered_at: row.last_rendered_at
+          });
+          return project;
+        });
+      } else {
+        projects = await Project.getByOwner(userId);
+      }
+    }
+
     res.json({
       success: true,
       data: projects.map(project => project.toJSON())
@@ -44,7 +139,7 @@ router.get('/:id', async (req, res) => {
     // Use direct SQL query for better performance with specific columns
     const result = await query(`
       SELECT 
-        id, name, description, template_id, status, owner_id, locked_by,
+        id, name, description, template_id, status, owner_id, locked_by, folder_id,
         merge_fields, timeline, settings, render_settings, output_url,
         created_at, updated_at, last_rendered_at
       FROM projects 
@@ -70,6 +165,7 @@ router.get('/:id', async (req, res) => {
       status: row.status,
       owner_id: row.owner_id,
       locked_by: row.locked_by,
+      folder_id: row.folder_id,
       merge_fields: row.merge_fields,
       timeline: row.timeline,
       settings: row.settings,
@@ -305,6 +401,51 @@ router.post('/:id/unlock', async (req, res) => {
     res.status(500).json({ 
       success: false,
       error: 'Failed to unlock project' 
+    });
+  }
+});
+
+// PATCH /api/projects/:id/move - Move project to folder
+router.patch('/:id/move', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { folderId } = req.body; // null or folder ID
+
+    const project = await Project.getById(id);
+    if (!project) {
+      return res.status(404).json({
+        success: false,
+        error: 'Project not found'
+      });
+    }
+
+    // Validate folder exists if provided
+    if (folderId) {
+      const Folder = require('../models/FolderPG');
+      const folder = await Folder.getById(folderId);
+      if (!folder) {
+        return res.status(404).json({
+          success: false,
+          error: 'Folder not found'
+        });
+      }
+    }
+
+    // Ensure folder_id is properly formatted (null or UUID string)
+    const updateFolderId = folderId && folderId !== 'null' && folderId !== 'root' ? folderId : null;
+    await project.update({ folder_id: updateFolderId });
+
+    res.json({
+      success: true,
+      data: project.toJSON()
+    });
+  } catch (error) {
+    console.error('Error moving project:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to move project',
+      message: process.env.NODE_ENV === 'development' ? error.message : undefined,
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 });

@@ -9,6 +9,7 @@ require('dotenv').config();
 const projectsRouter = require('./routes/projects');
 const templatesRouter = require('./routes/templates');
 const componentsRouter = require('./routes/components');
+const foldersRouter = require('./routes/folders');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -19,7 +20,7 @@ app.use(helmet());
 app.use(cors({
   origin: ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:3005', 'http://127.0.0.1:3000', 'http://127.0.0.1:3001', 'http://127.0.0.1:3005'],
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 app.use(morgan('combined'));
@@ -39,6 +40,7 @@ app.get('/health', (req, res) => {
 app.use('/api/projects', projectsRouter);
 app.use('/api/templates', templatesRouter);
 app.use('/api/components', componentsRouter);
+app.use('/api/folders', foldersRouter);
 
 // Migration endpoint
 app.post('/api/migrate', async (req, res) => {
@@ -50,6 +52,38 @@ app.post('/api/migrate', async (req, res) => {
     await query(`
       ALTER TABLE templates 
       ADD COLUMN IF NOT EXISTS settings JSONB DEFAULT '{}'
+    `);
+    
+    // Create folders table
+    await query(`
+      CREATE TABLE IF NOT EXISTS folders (
+        id UUID PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        parent_id UUID REFERENCES folders(id) ON DELETE SET NULL,
+        owner_id VARCHAR(255) NOT NULL,
+        metadata JSONB DEFAULT '{}',
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    
+    // Create indexes for folders
+    await query(`
+      CREATE INDEX IF NOT EXISTS idx_folders_owner_id ON folders(owner_id)
+    `);
+    await query(`
+      CREATE INDEX IF NOT EXISTS idx_folders_parent_id ON folders(parent_id)
+    `);
+    
+    // Add folder_id to projects table
+    await query(`
+      ALTER TABLE projects 
+      ADD COLUMN IF NOT EXISTS folder_id UUID REFERENCES folders(id) ON DELETE SET NULL
+    `);
+    
+    // Create index on projects.folder_id
+    await query(`
+      CREATE INDEX IF NOT EXISTS idx_projects_folder_id ON projects(folder_id)
     `);
     
     console.log('Database migrations completed successfully');

@@ -6,6 +6,7 @@ export interface Project {
   description?: string;
   template_id?: string;
   status: 'draft' | 'in_progress' | 'completed' | 'failed';
+  folderId?: string | null;
   created_at: string;
   updated_at: string;
   created_by?: string;

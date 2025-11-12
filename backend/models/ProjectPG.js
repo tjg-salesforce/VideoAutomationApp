@@ -10,6 +10,7 @@ class Project {
     this.status = data.status || 'draft'; // draft, rendering, completed, failed
     this.owner_id = data.owner_id || null;
     this.locked_by = data.locked_by || null; // For collaboration
+    this.folder_id = data.folder_id || null; // Reference to folder
     this.merge_fields = data.merge_fields || {}; // JSON object for template variables
     this.timeline = data.timeline || []; // JSON array of timeline components
     this.settings = data.settings || {
@@ -32,10 +33,10 @@ class Project {
   async save() {
     const sql = `
       INSERT INTO projects (
-        id, name, description, template_id, status, owner_id, locked_by,
+        id, name, description, template_id, status, owner_id, locked_by, folder_id,
         merge_fields, timeline, settings, render_settings, output_url,
         created_at, updated_at, last_rendered_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
       ON CONFLICT (id) DO UPDATE SET
         name = EXCLUDED.name,
         description = EXCLUDED.description,
@@ -43,6 +44,7 @@ class Project {
         status = EXCLUDED.status,
         owner_id = EXCLUDED.owner_id,
         locked_by = EXCLUDED.locked_by,
+        folder_id = EXCLUDED.folder_id,
         merge_fields = EXCLUDED.merge_fields,
         timeline = EXCLUDED.timeline,
         settings = EXCLUDED.settings,
@@ -54,7 +56,7 @@ class Project {
 
     const values = [
       this.id, this.name, this.description, this.template_id, this.status,
-      this.owner_id, this.locked_by, JSON.stringify(this.merge_fields),
+      this.owner_id, this.locked_by, this.folder_id, JSON.stringify(this.merge_fields),
       JSON.stringify(this.timeline), JSON.stringify(this.settings),
       JSON.stringify(this.render_settings), this.output_url,
       this.created_at, this.updated_at, this.last_rendered_at
@@ -84,6 +86,7 @@ class Project {
           status: row.status,
           owner_id: row.owner_id,
           locked_by: row.locked_by,
+          folder_id: row.folder_id,
           merge_fields: row.merge_fields,
           timeline: row.timeline,
           settings: row.settings,
@@ -114,6 +117,7 @@ class Project {
         status: row.status,
         owner_id: row.owner_id,
         locked_by: row.locked_by,
+        folder_id: row.folder_id,
         merge_fields: row.merge_fields,
         timeline: row.timeline,
         settings: row.settings,
@@ -220,6 +224,7 @@ class Project {
       status: this.status,
       ownerId: this.owner_id,
       lockedBy: this.locked_by,
+      folderId: this.folder_id,
       mergeFields: this.merge_fields,
       timeline: this.timeline,
       settings: this.settings,
