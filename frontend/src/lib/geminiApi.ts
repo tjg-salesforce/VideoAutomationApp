@@ -377,3 +377,350 @@ Return ONLY the valid JSON array, no other text or explanation.`;
   }
 }
 
+export interface ScriptSection {
+  headline: string;
+  script: string;
+  visualDescription: string;
+  notes?: string;
+}
+
+export interface GenerateScriptParams {
+  prompt: string;
+  apiKey: string;
+  existingSections?: ScriptSection[];
+  targetSectionIndex?: number; // For single-section editing
+}
+
+/**
+ * Generates script sections using Google Gemini API
+ * Can generate all sections or edit a single section
+ */
+export async function generateScript({
+  prompt,
+  apiKey,
+  existingSections = [],
+  targetSectionIndex
+}: GenerateScriptParams): Promise<ScriptSection[]> {
+  try {
+    // Build context from existing sections if provided
+    let existingContext = '';
+    if (existingSections && existingSections.length > 0) {
+      const sectionsText = existingSections.map((section, idx) => 
+        `Section ${idx + 1}:
+- Headline: ${section.headline || '(none)'}
+- Script: ${section.script || '(none)'}
+- Visual Description: ${section.visualDescription || '(none)'}
+- Notes: ${section.notes || '(none)'}`
+      ).join('\n\n');
+      
+      if (targetSectionIndex !== undefined) {
+        existingContext = `\n\nEXISTING SCRIPT CONTEXT (all sections):
+${sectionsText}
+
+CRITICAL INSTRUCTIONS:
+1. You are editing ONLY Section ${targetSectionIndex + 1} (the section at index ${targetSectionIndex})
+2. Maintain consistency with the other sections (product names, tone, style, etc.)
+3. The headline should be max 10 words
+4. Generate a complete section that fits naturally with the existing script flow
+5. Return ONLY the edited section, not all sections`;
+      } else {
+        existingContext = `\n\nEXISTING SCRIPT CONTEXT:
+${sectionsText}
+
+CRITICAL INSTRUCTIONS:
+1. The user wants to generate a NEW complete script that REPLACES the existing one above
+2. However, you MUST maintain consistency with specific details mentioned in the existing script (product names, brands, specific features, tone, etc.)
+3. If the user's new prompt doesn't mention specific details from the existing script, you should still incorporate those details naturally
+4. Generate a fresh script flow based on the new prompt, but preserve important contextual details from the existing script
+5. Each section should have a headline (max 10 words), script text, visual description, and optional notes`;
+      }
+    }
+
+    const systemPrompt = `You are a video script generator that creates structured script sections for video production.
+
+Requirements:
+1. Generate realistic video script sections based on the user's prompt
+2. Each section should have:
+   - Headline: A brief description (max 10 words) for the section
+   - Script: The actual script text to be spoken/displayed (can be multiple sentences)
+   - Visual Description: Description of what should be shown on screen during this section
+   - Notes: Optional notes or production considerations
+3. Generate 3-8 sections total (unless editing a single section)
+4. Return ONLY a valid JSON array of sections in this exact format:
+[
+  {
+    "headline": "Section headline here (max 10 words)",
+    "script": "The script text for this section...",
+    "visualDescription": "What should be shown visually...",
+    "notes": "Optional production notes..."
+  }
+]
+
+CRITICAL JSON FORMATTING RULES:
+- You MUST return valid JSON that can be parsed by JSON.parse()
+- All quotes within text fields MUST be escaped with backslash: \\"
+- Example: {"script": "I said \\"hello\\" to them"}
+- Do NOT use single quotes, only double quotes escaped with backslash
+- Ensure all strings are properly closed with matching quotes
+- Return ONLY the JSON array, no markdown code blocks, no explanations, no other text
+
+User's prompt: ${prompt}${existingContext}
+
+Return ONLY the valid JSON array, no other text or explanation.`;
+
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                {
+                  text: systemPrompt
+                }
+              ]
+            }
+          ],
+          generationConfig: {
+            temperature: 0.7,
+            topK: 40,
+            topP: 0.95,
+            maxOutputTokens: 2048,
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  headline: { type: "string" },
+                  script: { type: "string" },
+                  visualDescription: { type: "string" },
+                  notes: { type: "string" }
+                },
+                required: ["headline", "script", "visualDescription"]
+              }
+            }
+          }
+        })
+      }
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(
+        errorData.error?.message || 
+        `Gemini API error: ${response.status} ${response.statusText}`
+      );
+    }
+
+    const data = await response.json();
+    
+    // Extract the generated text or structured data
+    let generatedText = '';
+    let structuredData: any = null;
+    
+    if (data.candidates?.[0]?.content?.parts) {
+      const parts = data.candidates[0].content.parts;
+      for (const part of parts) {
+        if (part.text) {
+          generatedText = part.text;
+          break;
+        } else if (part.structVal) {
+          structuredData = part.structVal;
+        }
+      }
+    } else if (data.candidates?.[0]?.content?.text) {
+      generatedText = data.candidates[0].content.text;
+    } else if (Array.isArray(data)) {
+      structuredData = data;
+    }
+    
+    // If we got structured data, convert it to sections format
+    if (structuredData && !generatedText) {
+      if (Array.isArray(structuredData)) {
+        const sections: ScriptSection[] = structuredData.map((item: any) => ({
+          headline: item.headline?.stringValue || item.headline || '',
+          script: item.script?.stringValue || item.script || '',
+          visualDescription: item.visualDescription?.stringValue || item.visualDescription || '',
+          notes: item.notes?.stringValue || item.notes || ''
+        }));
+        return sections;
+      } else if (structuredData.values) {
+        const values = structuredData.values;
+        if (Array.isArray(values)) {
+          const sections: ScriptSection[] = values.map((item: any) => ({
+            headline: item.headline?.stringValue || item.headline || '',
+            script: item.script?.stringValue || item.script || '',
+            visualDescription: item.visualDescription?.stringValue || item.visualDescription || '',
+            notes: item.notes?.stringValue || item.notes || ''
+          }));
+          return sections;
+        }
+      }
+    }
+    
+    if (!generatedText && !structuredData) {
+      console.error('No response from Gemini API. Full response:', JSON.stringify(data, null, 2));
+      throw new Error('No response from Gemini API. Please check the console for details.');
+    }
+
+    // Parse the JSON response
+    let jsonText = generatedText.trim();
+    jsonText = jsonText.replace(/```json\n?/g, '').replace(/```\n?/g, '');
+    
+    const jsonMatch = jsonText.match(/\[[\s\S]*\]/);
+    if (jsonMatch) {
+      jsonText = jsonMatch[0];
+    }
+
+    // Try to fix common JSON issues before parsing
+    let sections: ScriptSection[] = [];
+    try {
+      sections = JSON.parse(jsonText);
+    } catch (parseError: any) {
+      // If parsing fails, try to fix common issues
+      console.warn('Initial JSON parse failed, attempting to fix:', parseError.message);
+      
+      // Try to fix unescaped quotes in string values
+      let fixedJson = jsonText;
+      
+      // Fix quotes in all string fields (headline, script, visualDescription, notes)
+      const stringFields = ['headline', 'script', 'visualDescription', 'notes'];
+      
+      for (const field of stringFields) {
+        // Pattern to match: "field": "content with possible unescaped quotes"
+        const fieldPattern = new RegExp(`"${field}"\\s*:\\s*"([^"]*(?:\\\\.[^"]*)*)"`, 'g');
+        fixedJson = fixedJson.replace(fieldPattern, (match, fieldContent) => {
+          // Process character by character to handle escaped sequences properly
+          let fixedContent = '';
+          for (let i = 0; i < fieldContent.length; i++) {
+            if (fieldContent[i] === '\\' && i + 1 < fieldContent.length) {
+              // This is an escape sequence, keep it as is
+              fixedContent += fieldContent[i] + fieldContent[i + 1];
+              i++; // Skip next character
+            } else if (fieldContent[i] === '"') {
+              // Unescaped quote, escape it
+              fixedContent += '\\"';
+            } else {
+              fixedContent += fieldContent[i];
+            }
+          }
+          return `"${field}":"${fixedContent}"`;
+        });
+      }
+      
+      try {
+        sections = JSON.parse(fixedJson);
+      } catch (secondError) {
+        // Last resort: try to manually extract sections
+        console.warn('Fixed JSON parse also failed, attempting manual extraction. Response:', jsonText.substring(0, 500));
+        sections = [];
+        
+        // Try to extract sections using regex patterns
+        // Look for patterns like: {"headline": "...", "script": "...", "visualDescription": "...", "notes": "..."}
+        const headlinePattern = /"headline"\s*:\s*"((?:[^"\\]|\\.)*)"/g;
+        const scriptPattern = /"script"\s*:\s*"((?:[^"\\]|\\.)*)"/g;
+        const visualDescPattern = /"visualDescription"\s*:\s*"((?:[^"\\]|\\.)*)"/g;
+        const notesPattern = /"notes"\s*:\s*"((?:[^"\\]|\\.)*)"/g;
+        
+        // Find all matches
+        const headlineMatches = Array.from(jsonText.matchAll(headlinePattern));
+        const scriptMatches = Array.from(jsonText.matchAll(scriptPattern));
+        const visualDescMatches = Array.from(jsonText.matchAll(visualDescPattern));
+        const notesMatches = Array.from(jsonText.matchAll(notesPattern));
+        
+        // Pair them up by index
+        const maxLength = Math.max(
+          headlineMatches.length,
+          scriptMatches.length,
+          visualDescMatches.length,
+          notesMatches.length
+        );
+        
+        for (let i = 0; i < maxLength; i++) {
+          const headline = headlineMatches[i]?.[1] || '';
+          const script = scriptMatches[i]?.[1] || '';
+          const visualDescription = visualDescMatches[i]?.[1] || '';
+          const notes = notesMatches[i]?.[1] || '';
+          
+          // Unescape common escape sequences
+          const unescape = (str: string) => str
+            .replace(/\\"/g, '"')
+            .replace(/\\n/g, '\n')
+            .replace(/\\r/g, '\r')
+            .replace(/\\t/g, '\t')
+            .replace(/\\\\/g, '\\');
+          
+          // Only add section if it has at least headline or script
+          if (headline || script) {
+            sections.push({
+              headline: unescape(headline).trim(),
+              script: unescape(script).trim(),
+              visualDescription: unescape(visualDescription).trim(),
+              notes: unescape(notes).trim() || undefined
+            });
+          }
+        }
+        
+        // If that didn't work, try a simpler pattern match
+        if (sections.length === 0) {
+          // Look for any pattern that looks like a section object
+          const sectionPattern = /\{\s*"headline"\s*:\s*"([^"]+)"[^}]*"script"\s*:\s*"([^"]+)"[^}]*\}/g;
+          let match;
+          while ((match = sectionPattern.exec(jsonText)) !== null) {
+            const headline = match[1] || '';
+            let script = match[2] || '';
+            script = script.replace(/\\"/g, '"').replace(/\\n/g, '\n').replace(/\\\\/g, '\\');
+            
+            if (headline || script) {
+              sections.push({
+                headline: headline.trim(),
+                script: script.trim(),
+                visualDescription: '',
+                notes: undefined
+              });
+            }
+          }
+        }
+        
+        if (sections.length === 0) {
+          // Log the actual response for debugging
+          console.error('Failed to extract sections. Full response:', generatedText);
+          throw new Error(
+            `Failed to parse JSON response. The AI may have returned invalid JSON. ` +
+            `Please try generating again with a simpler prompt. Original error: ${parseError.message}`
+          );
+        }
+      }
+    }
+
+    // Validate sections
+    const validatedSections: ScriptSection[] = sections
+      .filter((section: any) => section && (section.headline || section.script))
+      .map((section: any) => ({
+        headline: (section.headline || '').trim().substring(0, 100), // Limit headline length
+        script: (section.script || '').trim(),
+        visualDescription: (section.visualDescription || '').trim(),
+        notes: (section.notes || '').trim() || undefined
+      }));
+
+    if (validatedSections.length === 0) {
+      throw new Error('No valid sections were generated. Please try again with a different prompt.');
+    }
+
+    // If editing a single section, return only that section
+    if (targetSectionIndex !== undefined && validatedSections.length > 0) {
+      return [validatedSections[0]]; // Return only the first (and should be only) section
+    }
+
+    return validatedSections;
+  } catch (error) {
+    console.error('Error generating script:', error);
+    throw error;
+  }
+}
+

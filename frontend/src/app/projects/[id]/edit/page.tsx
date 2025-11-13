@@ -14,6 +14,8 @@ import PreviewModal from '@/components/PreviewModal';
 import SaveTemplateModal from '@/components/SaveTemplateModal';
 import ProjectSettingsModal from '@/components/ProjectSettingsModal';
 import Toast from '@/components/Toast';
+import ScriptPlanningGrid from '@/components/ScriptPlanningGrid';
+import { ScriptPlanRow } from '@/types';
 
 // Video component that responds to timeline controls
 function VideoTimelineControl({ 
@@ -270,6 +272,8 @@ export default function ProjectEditor() {
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [showSaveDropdown, setShowSaveDropdown] = useState(false);
+  const [viewMode, setViewMode] = useState<'script-planning' | 'timeline-editing'>('timeline-editing');
+  const [scriptPlan, setScriptPlan] = useState<ScriptPlanRow[]>([]);
   
   // Clip splitting state
   const [hoveredItem, setHoveredItem] = useState<{itemId: string; layerId: string} | null>(null);
@@ -1442,6 +1446,11 @@ export default function ProjectEditor() {
 
         // Restore media assets, timeline layers, zoom, and media properties from settings if they exist
         if (projectData.settings) {
+          // Load script plan
+          if (projectData.settings.scriptPlan) {
+            setScriptPlan(projectData.settings.scriptPlan);
+          }
+          
           if (projectData.settings.mediaAssets) {
             setMediaAssets(projectData.settings.mediaAssets);
           }
@@ -2743,7 +2752,8 @@ export default function ProjectEditor() {
           timelineTabs, // Save timeline tabs for group persistence
           timelineZoom,
           mediaProperties,
-          componentProperties // Also save componentProperties separately for easier access
+          componentProperties, // Also save componentProperties separately for easier access
+          scriptPlan // Save script planning data
         },
         status: 'in_progress'
       };
@@ -3462,6 +3472,30 @@ export default function ProjectEditor() {
           </div>
         </div>
         <div className="flex items-center space-x-2">
+          {/* View Mode Switcher */}
+          <div className="flex items-center bg-gray-100 rounded-lg p-1 mr-2">
+            <button
+              onClick={() => setViewMode('script-planning')}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                viewMode === 'script-planning'
+                  ? 'bg-white text-blue-600 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              Script Planning
+            </button>
+            <button
+              onClick={() => setViewMode('timeline-editing')}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                viewMode === 'timeline-editing'
+                  ? 'bg-white text-blue-600 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              Timeline Editing
+            </button>
+          </div>
+          
           <button
             onClick={() => setShowSettingsModal(true)}
             disabled={loading}
@@ -3526,10 +3560,52 @@ Save {isTemplate ? 'Template' : 'Project'}
       </div>
 
       <div className="flex flex-1 min-h-0">
-        {/* Main Preview Area */}
-        <div className="flex-1 flex flex-col">
-          {/* Preview */}
-          <div className="flex-1 flex items-center justify-center p-6 bg-gray-100">
+        {/* Main Content Area - Script Planning or Timeline Editing */}
+        {viewMode === 'script-planning' ? (
+          <div className="flex-1 flex flex-col bg-white">
+            <ScriptPlanningGrid
+              rows={scriptPlan || []}
+              onRowsChange={(newRows) => {
+                setScriptPlan(newRows);
+                // Auto-save script plan to project settings
+                if (project) {
+                  const updatedSettings = {
+                    ...(project.settings || {}),
+                    scriptPlan: newRows
+                  };
+                  setProject({
+                    ...project,
+                    settings: updatedSettings
+                  });
+                }
+              }}
+              onVideoGenerated={({ dataUrl, blob, duration, name, prompt }) => {
+                // Add generated video to media assets
+                const newAsset = {
+                  id: `media_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                  name: name,
+                  type: 'video',
+                  data: dataUrl,
+                  duration: duration,
+                  file: blob,
+                  generated: true,
+                  prompt: prompt
+                };
+                setMediaAssets(prev => [...prev, newAsset]);
+                
+                // Show success toast
+                setToast({ 
+                  message: `Video "${name}" generated and added to media library!`, 
+                  type: 'success' 
+                });
+              }}
+            />
+          </div>
+        ) : (
+          <>
+          <div className="flex-1 flex flex-col">
+            {/* Preview */}
+            <div className="flex-1 flex items-center justify-center p-6 bg-gray-100">
             <div 
               className="w-full h-full max-w-6xl relative" 
               style={{ aspectRatio: '16/9' }}
@@ -4389,9 +4465,9 @@ Save {isTemplate ? 'Template' : 'Project'}
           </div>
         </div>
 
-        {/* Component Library & Properties Sidebar */}
-        <div className="w-96 border-l border-gray-200 overflow-y-auto bg-white">
-          <div className="p-6">
+          {/* Component Library & Properties Sidebar */}
+          <div className="w-96 border-l border-gray-200 overflow-y-auto bg-white">
+            <div className="p-6">
             {/* Toggle between Component Library, Media Library and Properties */}
             <div className="flex mb-4 border-b border-gray-200">
               <button
@@ -4990,6 +5066,8 @@ Save {isTemplate ? 'Template' : 'Project'}
             )}
           </div>
         </div>
+          </>
+        )}
       </div>
 
 

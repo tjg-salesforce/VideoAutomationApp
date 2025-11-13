@@ -109,23 +109,8 @@ export default function Home() {
   // Toast state
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
-  useEffect(() => {
-    loadData();
-    loadFolders();
-  }, []);
-
-  useEffect(() => {
-    // Reload projects when folder selection changes
-    if (!loading) {
-      loadProjects();
-    }
-  }, [selectedFolderId]);
-
-  const loadData = async () => {
-    await Promise.all([loadProjects(), loadTemplates()]);
-  };
-
-  const loadProjects = async () => {
+  // Define load functions using useCallback to ensure they're available and memoized
+  const loadProjects = useCallback(async () => {
     setLoadingProjects(true);
     try {
       // Use lightweight=true to only fetch essential fields (much faster)
@@ -140,9 +125,9 @@ export default function Home() {
     } finally {
       setLoadingProjects(false);
     }
-  };
+  }, [selectedFolderId]);
 
-  const loadTemplates = async () => {
+  const loadTemplates = useCallback(async () => {
     try {
       const templatesRes = await apiEndpoints.getTemplates(true).catch(err => {
         console.error('Templates API error:', err);
@@ -153,9 +138,9 @@ export default function Home() {
       console.error('Error loading templates:', err);
       setTemplates([]);
     }
-  };
+  }, []);
 
-  const loadFolders = async () => {
+  const loadFolders = useCallback(async () => {
     try {
       const foldersRes = await apiEndpoints.getFolders('default-user', true).catch(err => {
         console.error('Folders API error:', err);
@@ -165,10 +150,30 @@ export default function Home() {
     } catch (err) {
       console.error('Error loading folders:', err);
       setFolders([]);
+    }
+  }, []);
+
+  const loadData = useCallback(async () => {
+    try {
+      await Promise.all([loadProjects(), loadTemplates()]);
     } finally {
       setLoading(false);
     }
-  };
+  }, [loadProjects, loadTemplates]);
+
+  useEffect(() => {
+    const initialize = async () => {
+      await Promise.all([loadData(), loadFolders()]);
+    };
+    initialize();
+  }, [loadData, loadFolders]);
+
+  useEffect(() => {
+    // Reload projects when folder selection changes
+    if (!loading) {
+      loadProjects();
+    }
+  }, [selectedFolderId, loading, loadProjects]);
 
   const handleProjectCreated = () => {
     loadProjects(); // Refresh the projects
@@ -307,7 +312,7 @@ export default function Home() {
   };
 
   // Filter projects based on search term
-  const filteredProjects = projects.filter(project => {
+  const filteredProjects = (projects || []).filter(project => {
     const searchLower = searchTerm.toLowerCase();
     return (
       project.name.toLowerCase().includes(searchLower) ||
@@ -402,7 +407,7 @@ export default function Home() {
                 </button>
               </div>
                     <FolderTree
-                      folders={folders}
+                      folders={folders || []}
                       selectedFolderId={selectedFolderId}
                       onSelectFolder={setSelectedFolderId}
                       onCreateFolder={handleCreateFolder}

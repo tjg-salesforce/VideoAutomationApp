@@ -1,5 +1,15 @@
 import { TimelineTab, TimelineGroup } from './timeline';
 
+export interface ScriptPlanRow {
+  id: string;
+  headline: string; // Max 10 words
+  script: string;
+  visualDescription: string;
+  estimatedTime: number; // Auto-calculated in seconds
+  notes: string;
+  order: number;
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -22,6 +32,7 @@ export interface Project {
     timelineZoom?: number;
     mediaProperties?: Record<string, any>;
     componentProperties?: Record<string, any>;
+    scriptPlan?: ScriptPlanRow[]; // New: Script planning data
   };
   
   // New tabbed timeline system
